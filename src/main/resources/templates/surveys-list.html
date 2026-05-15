@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Surveys - Literature Review System</title>
+    <link rel="stylesheet" th:href="@{/css/styles.css}">
+</head>
+<body>
+    <div class="page-container">
+        <!-- Header -->
+        <header class="page-header">
+            <div class="container">
+                <div class="header-content">
+                    <div class="header-text">
+                        <h1>Surveys</h1>
+                        <p class="header-subtitle">Manage your systematic literature reviews</p>
+                    </div>
+                    <a th:href="@{/survey/new}" class="btn btn-primary">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 5v14m-7-7h14"/>
+                        </svg>
+                        New Survey
+                    </a>
+                </div>
+
+                <!-- Search -->
+                <div class="search-container">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <path d="m21 21-4.35-4.35"/>
+                    </svg>
+                    <input type="text"
+                           id="searchInput"
+                           placeholder="Search surveys..."
+                           class="search-input"
+                           onkeyup="filterSurveys()">
+                </div>
+            </div>
+        </header>
+
+        <!-- Surveys List -->
+        <main class="main-content">
+            <div class="container">
+                <!-- Empty State -->
+                <div id="emptyState" class="empty-state" style="display: none;">
+                    <div class="empty-state-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                    </div>
+                    <h3>No surveys found</h3>
+                    <p class="empty-state-text">Try adjusting your search query</p>
+                </div>
+
+                <!-- Surveys Grid -->
+                <div id="surveysContainer" class="surveys-grid">
+                    <article th:each="survey : ${surveys}"
+                             th:data-name="${survey.name}"
+                             th:data-description="${survey.description}"
+                             class="survey-card">
+                        <a th:href="@{/survey/{id}(id=${survey.id})}" class="survey-card-link">
+                            <div class="survey-card-content">
+                                <div class="survey-card-header">
+                                    <h3 class="survey-title" th:text="${survey.name}">Survey Name</h3>
+                                    <span th:class="'badge badge-' + ${survey.status == 'In Progress' ? 'in-progress' : survey.status == 'Completed' ? 'completed' : 'draft'}"
+                                          th:text="${survey.status}">Status</span>
+                                </div>
+                                <p class="survey-description" th:text="${survey.description}">Survey description</p>
+                                <div class="survey-meta">
+                                    <div class="meta-item">
+                                        <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                            <polyline points="14 2 14 8 20 8"/>
+                                        </svg>
+                                        <span th:text="${survey.totalArticles} + ' article' + (${survey.totalArticles != 1} ? 's' : '')">0 articles</span>
+                                    </div>
+                                    <div class="meta-item">
+                                        <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                            <line x1="16" y1="2" x2="16" y2="6"/>
+                                            <line x1="8" y1="2" x2="8" y2="6"/>
+                                            <line x1="3" y1="10" x2="21" y2="10"/>
+                                        </svg>
+                                        <span th:text="'Created ' + ${#temporals.format(survey.createdDate, 'MMM dd, yyyy')}">Created date</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="survey-card-actions">
+                                <a th:href="@{/survey/{id}/edit(id=${survey.id})}"
+                                   class="action-btn" title="Edit survey" onclick="event.stopPropagation()">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                    </svg>
+                                </a>
+                                <button type="button" th:onclick="'deleteSurvey(\'' + ${survey.id} + '\')'"
+                                        class="action-btn action-btn-delete" title="Delete survey">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polyline points="3 6 5 6 21 6"/>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </a>
+                    </article>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        function filterSurveys() {
+            const searchValue = document.getElementById('searchInput').value.toLowerCase();
+            const surveyCards = document.querySelectorAll('.survey-card');
+            const emptyState = document.getElementById('emptyState');
+            let visibleCount = 0;
+
+            surveyCards.forEach(card => {
+                const name = card.dataset.name.toLowerCase();
+                const description = card.dataset.description.toLowerCase();
+                if (name.includes(searchValue) || description.includes(searchValue)) {
+                    card.style.display = '';
+                    visibleCount++;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+            emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
+        }
+
+        function deleteSurvey(surveyId) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (confirm('Are you sure you want to delete this survey? This action cannot be undone.')) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/survey/' + surveyId + '/delete';
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+    </script>
+</body>
+</html>
