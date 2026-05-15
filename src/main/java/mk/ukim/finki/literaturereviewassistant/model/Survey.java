@@ -9,6 +9,7 @@ import static lombok.ToString.*;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
+@Entity
 public class Survey {
 
     @Id
