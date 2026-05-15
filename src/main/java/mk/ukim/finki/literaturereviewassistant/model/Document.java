@@ -11,6 +11,7 @@ public class Document {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long documentId;
+    private String title;
     private String type; // e.g., "PDF"
     private String filePath;
 
