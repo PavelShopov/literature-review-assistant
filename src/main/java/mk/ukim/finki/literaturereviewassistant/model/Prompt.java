@@ -1,5 +1,4 @@
 package mk.ukim.finki.literaturereviewassistant.model;
-
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -7,15 +6,11 @@ import lombok.*;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class Document {
+public class Prompt {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long documentId;
-    private String type; // e.g., "PDF"
-    private String filePath;
+    private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "article_id")
-    private Article article;
+    private String Input;
+    private String Output;
 }
-

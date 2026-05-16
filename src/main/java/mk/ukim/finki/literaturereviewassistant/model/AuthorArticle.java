@@ -6,11 +6,13 @@ import lombok.*;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class Author {
+public class AuthorArticle {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String Name;
-    private String Surname;
+    @ManyToOne
+    private Author author;
+
+    @ManyToOne
+    private Article article;
 }

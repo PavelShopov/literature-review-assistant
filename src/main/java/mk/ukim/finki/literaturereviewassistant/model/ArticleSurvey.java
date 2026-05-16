@@ -2,15 +2,20 @@ package mk.ukim.finki.literaturereviewassistant.model;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.Year;
+import java.util.List;
+
 @Entity
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class Author {
+public class ArticleSurvey {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String Name;
-    private String Surname;
+    @ManyToOne
+    private Article article;
+
+    @ManyToOne
+    private Survey survey;
 }

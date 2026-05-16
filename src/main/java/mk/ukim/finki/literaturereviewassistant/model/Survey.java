@@ -4,29 +4,21 @@ import lombok.*;
 
 import java.util.List;
 
-import static lombok.ToString.*;
-
+@Entity
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 public class Survey {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long surveyId;
+    private Long id;
 
-    private String title;
+    private String Question;
+    private String Title;
+    private String Description;
 
-    @ElementCollection
     private List<String> keywords;
 
-    @ManyToMany
-    @Exclude
-    @EqualsAndHashCode.Exclude
-    private List<Article> articles;
-
-    @OneToMany(mappedBy = "survey", cascade = CascadeType.ALL)
-    @ToString.Exclude
-    @EqualsAndHashCode.Exclude
-    private List<Prompts> prompts;
+    @OneToMany(cascade = CascadeType.ALL)
+    List<Prompt> prompts;
 }
