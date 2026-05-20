@@ -27,7 +27,6 @@ public class AnnotationResult {
     private Prompts prompt;
 
     @ManyToOne
-
     @JoinColumn(name = "survey_id")
     private Survey survey;
 }

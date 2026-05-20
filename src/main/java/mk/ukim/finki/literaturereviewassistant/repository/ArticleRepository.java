@@ -11,7 +11,9 @@ import java.util.Optional;
 @Repository
 public interface ArticleRepository extends JpaSpecificationRepository<Article, Long> {
     Optional<Article> findByTitleContainingIgnoreCase(String text);
-    Optional<Article> findById(Long Id);
     Page<Article> findByArticleAbstractContainingIgnoreCase(String articleAbstract, Pageable pageable);
 
+    Optional<Article> findByDoi(String doi);
+
+    Optional<Article> findByUrl(String url);
 }
