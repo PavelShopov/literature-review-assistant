@@ -7,7 +7,7 @@ import lombok.*;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class Prompts {
+public class Prompt {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

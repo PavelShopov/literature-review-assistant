@@ -24,7 +24,7 @@ public class AnnotationResult {
 
     @ManyToOne
     @JoinColumn(name = "prompt_id")
-    private Prompts prompt;
+    private Prompt prompt;
 
     @ManyToOne
     @JoinColumn(name = "survey_id")

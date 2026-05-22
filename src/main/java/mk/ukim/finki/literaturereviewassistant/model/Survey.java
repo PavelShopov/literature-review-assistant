@@ -21,7 +21,8 @@ public class Survey {
     @ElementCollection
     private List<String> keywords;
 
-    @ManyToMany
+
+    @ManyToMany(mappedBy = "surveys")
     @Exclude
     @EqualsAndHashCode.Exclude
     private List<Article> articles;

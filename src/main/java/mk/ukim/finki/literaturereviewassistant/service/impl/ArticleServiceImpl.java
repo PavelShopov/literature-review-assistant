@@ -1,9 +1,7 @@
 package mk.ukim.finki.literaturereviewassistant.service.impl;
-import jakarta.transaction.Transactional;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
-import mk.ukim.finki.literaturereviewassistant.model.Article;
-import mk.ukim.finki.literaturereviewassistant.model.Author;
-import mk.ukim.finki.literaturereviewassistant.model.Survey;
+import mk.ukim.finki.literaturereviewassistant.model.*;
 import mk.ukim.finki.literaturereviewassistant.repository.ArticleRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.AuthorRepository;
 import mk.ukim.finki.literaturereviewassistant.service.ArticleService;
@@ -13,11 +11,9 @@ import mk.ukim.finki.literaturereviewassistant.service.DataService.PdfExtractorS
 import mk.ukim.finki.literaturereviewassistant.service.DataService.ArticleMetadata;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.annotation.Transactional;
 
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -34,28 +30,28 @@ public class ArticleServiceImpl implements ArticleService{
     private final BibTexParser bibTexParser;          // parses .bib files
     private final PdfExtractorService pdfExtractorService;   // extracts text / metadata from PDFs
     private final SemanticScholarClient semanticScholarClient; // calls the Semantic Scholar API
-//    private final LlmAnnotationService  llmAnnotationService;  // wraps the LLM (e.g. Claude / GPT)
+    private final LlmAnnotationService  llmAnnotationService;  // wraps the LLM (e.g. Claude / GPT)
 
     @Override
-    @Transactional//(readOnly = true)
+    @Transactional(readOnly = true)
     public List<Article> findAll() {
         return articleRepository.findAll();
     }
 
     @Override
-    @Transactional//(readOnly = true)
+    @Transactional(readOnly = true)
     public Optional<Article> findById(Long articleId) {
         return articleRepository.findById(articleId);
     }
 
     @Override
-    @Transactional//(readOnly = true)
+    @Transactional(readOnly = true)
     public Optional<Article> findByDoi(String doi) {
         return articleRepository.findByDoi(doi);
     }
 
     @Override
-    @Transactional//(readOnly = true)
+    @Transactional(readOnly = true)
     public Optional<Article> findByUrl(String url) {
         return articleRepository.findByUrl(url);
     }
@@ -146,33 +142,39 @@ public class ArticleServiceImpl implements ArticleService{
         article.setAuthors(resolveOrCreateAuthors(meta.getAuthorNames()));
 
         Article saved = articleRepository.save(article);
-        attachDocument(saved, bytes, DocumentType.DOCUMENT_TYPE_NODE);
+
+        attachDocument(saved, bytes, DocumentType.PDF);
         return saved;
     }
 
     @Override
     public List<Article> importFromSemanticScholar(String query, int maxResults) {
-        List<SemanticScholarResult> results =
-                semanticScholarClient.search(query, maxResults);
-
-        List<Article> imported = new ArrayList<>();
-        for (SemanticScholarResult r : results) {
-            if (r.getDoi() != null &&
-                    articleRepository.findByDoi(r.getDoi()).isPresent()) {
-                continue;
-            }
-
-            Article article = new Article();
-            article.setTitle(r.getTitle());
-            article.setDoi(r.getDoi());
-            article.setUrl(r.getUrl());
-            article.setArticleAbstract(r.getAbstractText());
-            article.setAuthors(resolveOrCreateAuthors(r.getAuthorNames()));
-
-            imported.add(articleRepository.save(article));
-        }
-        return imported;
+        return List.of();
     }
+
+//    @Override
+//    public List<Article> importFromSemanticScholar(String query, int maxResults) {
+//        List<SemanticScholarResult> results =
+//                semanticScholarClient.search(query, maxResults);
+//
+//        List<Article> imported = new ArrayList<>();
+//        for (SemanticScholarResult r : results) {
+//            if (r.getDoi() != null &&
+//                    articleRepository.findByDoi(r.getDoi()).isPresent()) {
+//                continue;
+//            }
+//              //TODO Add semantic scholar
+//            Article article = new Article();
+//            article.setTitle(r.getTitle());
+//            article.setDoi(r.getDoi());
+//            article.setUrl(r.getUrl());
+//            article.setArticleAbstract(r.getAbstractText());
+//            article.setAuthors(resolveOrCreateAuthors(r.getAuthorNames()));
+//
+//            imported.add(articleRepository.save(article));
+//        }
+//        return imported;
+//    }
 
     // =========================================================================
     // Survey Association
@@ -252,7 +254,7 @@ public class ArticleServiceImpl implements ArticleService{
     @Override
     public Map<String, Object> annotate(Long articleId, Long promptId, boolean useFullText) {
         Article article = getArticleOrThrow(articleId);
-        Prompt  prompt  = getPromptOrThrow(promptId);
+        Prompt prompt  = getPromptOrThrow(promptId);
 
         String context = buildContext(article, useFullText);
         Map<String, Object> result = llmAnnotationService.annotate(context, prompt);
@@ -367,9 +369,9 @@ public class ArticleServiceImpl implements ArticleService{
     private void attachDocument(Article article, byte[] content, DocumentType type) {
         Document doc = new Document();
         doc.setArticle(article);
-        doc.setDocumentType(type);
-        doc.setContent(content);
-        doc.setExtractedText(pdfExtractorService.extractText(content));
+        doc.setType(type);
+//        doc.setContent(content);
+//        doc.setExtractedText(pdfExtractorService.extractText(content));
         documentRepository.save(doc);
     }
 }

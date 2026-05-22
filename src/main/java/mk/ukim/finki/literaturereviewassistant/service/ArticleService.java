@@ -90,6 +90,8 @@ public interface ArticleService {
 
         Article removeAuthor(Long articleId, Long authorId);
 
+        Map<String, Object> annotate(Long articleId, Long promptId, boolean useFullText);
+
         // ─── AI Annotation ───────────────────────────────────────────────────────
 
 //        /**

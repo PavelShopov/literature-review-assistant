@@ -31,10 +31,16 @@ public class Article {
 
     @ManyToMany
     @ToString.Exclude
+    @EqualsAndHashCode.Exclude
     private List<Survey> surveys;
 
     @OneToMany(mappedBy = "article", cascade = CascadeType.ALL)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     private List<Document> documents;
+
+    @OneToMany(mappedBy = "article", cascade = CascadeType.ALL)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private List<AnnotationResult> annotationResults;
 }

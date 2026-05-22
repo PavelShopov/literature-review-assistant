@@ -1,33 +1,18 @@
 package mk.ukim.finki.literaturereviewassistant.service.DataService;
 
+import lombok.Data;
 import java.util.ArrayList;
 import java.util.List;
 
+@Data
 public class BibEntry {
-    public String getDoi() {
-        //TODO
-        return "";
-    }
-
-    public String getTitle() {
-        //TODO
-        return "";
-
-    }
-
-    public String getUrl() {
-        //TODO
-        return "";
-
-    }
+    private String doi;
+    private String title;
+    private String url;
+    private String abstractText;
+    private List<String> authorNames = new ArrayList<>();
 
     public String getAbstract() {
-        //TODO
-        return "";
-    }
-
-    public List<String> getAuthorNames() {
-        //TODO
-        return new ArrayList<>();
+        return abstractText;
     }
 }
