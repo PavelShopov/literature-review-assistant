@@ -6,6 +6,7 @@ import java.util.List;
 
 import static lombok.ToString.*;
 
+@Entity
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -21,7 +22,12 @@ public class Survey {
     private List<String> keywords;
 
     @ManyToMany
-    @Exclude
+    @JoinTable(
+            name = "survey_article",
+            joinColumns = @JoinColumn(name = "survey_id"),
+            inverseJoinColumns = @JoinColumn(name = "article_id")
+    )
+    @ToString.Exclude
     @EqualsAndHashCode.Exclude
     private List<Article> articles;
 

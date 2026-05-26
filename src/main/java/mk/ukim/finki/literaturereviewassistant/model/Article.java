@@ -1,6 +1,7 @@
 package mk.ukim.finki.literaturereviewassistant.model;
 import jakarta.persistence.*;
 import lombok.*;
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -31,7 +32,7 @@ public class Article {
     private List<Author> authors;
 
     @ManyToMany(mappedBy = "articles")
-    private MutableList<Survey> surveys;
+    private List<Survey> surveys = new ArrayList<>();
 
 
 // Source - https://stackoverflow.com/a/60799284
