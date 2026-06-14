@@ -92,6 +92,12 @@ public interface ArticleService {
 
         Map<String, Object> annotate(Long articleId, Long promptId, boolean useFullText);
 
+        Map<String, Object> ask(Long articleId, Long promptId, boolean useFullText);
+
+        Map<Long, Map<String, Object>> batchAnnotate(Long surveyId, Long promptId, boolean useFullText);
+
+        Map<Long, Map<String, Object>> batchAsk(Long surveyId, Long promptId, boolean useFullText);
+
         // ─── AI Annotation ───────────────────────────────────────────────────────
 
 //        /**

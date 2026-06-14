@@ -4,6 +4,10 @@ import lombok.RequiredArgsConstructor;
 import mk.ukim.finki.literaturereviewassistant.model.*;
 import mk.ukim.finki.literaturereviewassistant.repository.ArticleRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.AuthorRepository;
+import mk.ukim.finki.literaturereviewassistant.repository.DocumentRepository;
+import mk.ukim.finki.literaturereviewassistant.repository.PromptRepository;
+import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
+import mk.ukim.finki.literaturereviewassistant.service.AIServices.LlmAnnotationService;
 import mk.ukim.finki.literaturereviewassistant.service.ArticleService;
 import mk.ukim.finki.literaturereviewassistant.service.DataService.BibEntry;
 import mk.ukim.finki.literaturereviewassistant.service.DataService.BibTexParser;
@@ -22,9 +26,9 @@ public class ArticleServiceImpl implements ArticleService{
 
     private final ArticleRepository articleRepository;
     private final AuthorRepository authorRepository;
-//    private final SurveyRepository  surveyRepository;
-//    private final DocumentRepository documentRepository;
-//    private final PromptRepository   promptRepository;
+    private final SurveyRepository surveyRepository;
+    private final DocumentRepository documentRepository;
+    private final PromptRepository promptRepository;
 
     // ─── External / AI clients (inject your own implementations) ─────────────
     private final BibTexParser bibTexParser;          // parses .bib files
@@ -330,10 +334,10 @@ public class ArticleServiceImpl implements ArticleService{
         if (authorNames == null) return new ArrayList<>();
         List<Author> authors = new ArrayList<>();
         for (String name : authorNames) {
-            Author author = authorRepository.findByFullName(name)
+            Author author = authorRepository.findByAuthorName(name)
                     .orElseGet(() -> {
                         Author a = new Author();
-                        a.setFullName(name);
+                        a.setAuthorName(name);
                         return authorRepository.save(a);
                     });
             authors.add(author);

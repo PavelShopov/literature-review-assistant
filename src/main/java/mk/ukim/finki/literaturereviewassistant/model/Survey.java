@@ -30,5 +30,5 @@ public class Survey {
     @OneToMany(mappedBy = "survey", cascade = CascadeType.ALL)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
-    private List<Prompts> prompts;
+    private List<Prompt> prompts;
 }
