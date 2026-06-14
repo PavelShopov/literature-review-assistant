@@ -228,7 +228,7 @@ public class ArticleServiceImpl implements ArticleService{
 
     @Override
     @Transactional(readOnly = true)
-    public List<Author> findAuthorsByArticle(Long articleId) {
+    public List<Map<String, Object>> findAuthorsByArticle(Long articleId) {
         return getArticleOrThrow(articleId).getAuthors();
     }
 

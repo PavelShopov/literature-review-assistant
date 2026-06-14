@@ -1,8 +1,6 @@
 package mk.ukim.finki.literaturereviewassistant.service;
 
 import mk.ukim.finki.literaturereviewassistant.model.Article;
-import mk.ukim.finki.literaturereviewassistant.model.Author;
-import org.springframework.data.domain.Page;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -84,7 +82,7 @@ public interface ArticleService {
 
         // ─── Author Management ────────────────────────────────────────────────────
 
-        List<Author> findAuthorsByArticle(Long articleId);
+        List<Map<String, Object>> findAuthorsByArticle(Long articleId);
 
         Article addAuthor(Long articleId, Long authorId);
 
