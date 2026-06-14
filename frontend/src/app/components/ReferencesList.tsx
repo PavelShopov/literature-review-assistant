@@ -1,6 +1,8 @@
-import { FileText, Eye, Plus, FolderPlus } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, FileText, Eye, FolderPlus, XCircle } from "lucide-react";
 import { motion } from "motion/react";
 import { useNavigate } from "react-router";
+import { toast } from "sonner";
 
 export interface Reference {
   id: string;
@@ -15,20 +17,42 @@ export interface Reference {
 interface ReferencesListProps {
   references: Reference[];
   surveyId: string;
-  onAddToSurvey: (referenceId: string, surveyId: string) => void;
+  decisions: Record<string, {
+    decision: "added" | "skipped";
+    summary: string;
+    decidedAt: string;
+    reviewerName?: string;
+  }>;
+  onReviewReference: (referenceId: string, decision: "added" | "skipped", summary: string) => void;
   onAddToNewSurvey: (referenceId: string) => void;
 }
 
 export function ReferencesList({
   references,
   surveyId,
-  onAddToSurvey,
+  decisions,
+  onReviewReference,
   onAddToNewSurvey,
 }: ReferencesListProps) {
   const navigate = useNavigate();
+  const [summaries, setSummaries] = useState<Record<string, string>>({});
 
   const handleViewArticle = (referenceId: string) => {
     navigate(`/survey/${surveyId}/articles`);
+  };
+
+  const handleAddToSurvey = (referenceId: string) => {
+    const summary = summaries[referenceId]?.trim() ?? "";
+    if (!summary) {
+      toast.error("Write a short summary explaining why this article should be added");
+      return;
+    }
+
+    onReviewReference(referenceId, "added", summary);
+  };
+
+  const handleSkip = (referenceId: string) => {
+    onReviewReference(referenceId, "skipped", summaries[referenceId]?.trim() ?? "");
   };
 
   return (
@@ -64,6 +88,24 @@ export function ReferencesList({
             transition={{ delay: index * 0.1 }}
             className="p-6 hover:bg-gray-50 transition-colors group"
           >
+            {decisions[reference.id] && (
+              <div
+                className={`mb-4 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${
+                  decisions[reference.id].decision === "added"
+                    ? "bg-green-50 text-green-700 border-green-200"
+                    : "bg-gray-50 text-gray-700 border-gray-200"
+                }`}
+              >
+                {decisions[reference.id].decision === "added" ? (
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                ) : (
+                  <XCircle className="w-3.5 h-3.5" />
+                )}
+                {decisions[reference.id].decision === "added" ? "Added to survey" : "Not added"}
+                {decisions[reference.id].reviewerName ? ` by ${decisions[reference.id].reviewerName}` : ""}
+              </div>
+            )}
+
             {/* Reference Header */}
             <div className="flex items-start justify-between mb-3">
               <div className="flex-1">
@@ -97,6 +139,25 @@ export function ReferencesList({
               </p>
             </div>
 
+            <div className="mb-4">
+              <label
+                htmlFor={`reference-summary-${reference.id}`}
+                className="block text-sm font-medium text-gray-900 mb-2"
+              >
+                Inclusion summary
+              </label>
+              <textarea
+                id={`reference-summary-${reference.id}`}
+                value={summaries[reference.id] ?? decisions[reference.id]?.summary ?? ""}
+                onChange={(event) =>
+                  setSummaries({ ...summaries, [reference.id]: event.target.value })
+                }
+                rows={3}
+                placeholder="Why should this article be added to the survey?"
+                className="w-full px-4 py-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              />
+            </div>
+
             {/* Source Label */}
             <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
               <FileText className="w-3.5 h-3.5" />
@@ -113,11 +174,18 @@ export function ReferencesList({
                 View Article
               </button>
               <button
-                onClick={() => onAddToSurvey(reference.id, surveyId)}
-                className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                onClick={() => handleAddToSurvey(reference.id)}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors"
               >
-                <Plus className="w-4 h-4" />
+                <CheckCircle2 className="w-4 h-4" />
                 Add to Survey
+              </button>
+              <button
+                onClick={() => handleSkip(reference.id)}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <XCircle className="w-4 h-4" />
+                Do Not Add
               </button>
               <button
                 onClick={() => onAddToNewSurvey(reference.id)}

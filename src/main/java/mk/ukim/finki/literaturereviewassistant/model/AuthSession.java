@@ -3,20 +3,22 @@ package mk.ukim.finki.literaturereviewassistant.model;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
-@Entity
 @Data
-@NoArgsConstructor
 @AllArgsConstructor
+@NoArgsConstructor
+@Entity
 public class AuthSession {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
     private String token;
 
-    @ManyToOne
-    @JoinColumn(name = "user_id")
-    private AppUser user;
+    private Instant createdAt;
 
-    private LocalDateTime createdAt;
+    @ManyToOne(fetch = FetchType.LAZY)
+    private AppUser user;
 }

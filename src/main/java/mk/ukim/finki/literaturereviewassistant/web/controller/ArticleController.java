@@ -1,6 +1,7 @@
 package mk.ukim.finki.literaturereviewassistant.web.controller;
 
 import mk.ukim.finki.literaturereviewassistant.model.Article;
+import mk.ukim.finki.literaturereviewassistant.model.Author;
 import mk.ukim.finki.literaturereviewassistant.service.ArticleService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -89,7 +90,7 @@ public class ArticleController {
 
     // ─── Author Management ───────────────────────────────────────────────────
     @GetMapping("/{articleId}/authors")
-    public List<Map<String, Object>> getAuthors(@PathVariable Long articleId) {
+    public List<Author> getAuthors(@PathVariable Long articleId) {
         // Returns a list of author DTOs – using generic Map for mock simplicity
         return articleService.findAuthorsByArticle(articleId);
     }

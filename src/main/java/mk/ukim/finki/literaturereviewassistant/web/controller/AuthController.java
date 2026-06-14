@@ -1,9 +1,10 @@
 package mk.ukim.finki.literaturereviewassistant.web.controller;
 
 import mk.ukim.finki.literaturereviewassistant.service.AuthService;
-import mk.ukim.finki.literaturereviewassistant.web.dto.AuthResponseDto;
-import mk.ukim.finki.literaturereviewassistant.web.dto.LoginRequestDto;
-import mk.ukim.finki.literaturereviewassistant.web.dto.RegisterRequestDto;
+import mk.ukim.finki.literaturereviewassistant.web.dto.AuthResponse;
+import mk.ukim.finki.literaturereviewassistant.web.dto.LoginRequest;
+import mk.ukim.finki.literaturereviewassistant.web.dto.RegisterRequest;
+import mk.ukim.finki.literaturereviewassistant.web.dto.UserResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,33 +14,43 @@ import org.springframework.web.bind.annotation.*;
 @CrossOrigin(origins = "http://localhost:5173")
 public class AuthController {
 
+    private final AuthService authService;
+
     @Autowired
-    private AuthService authService;
+    public AuthController(AuthService authService) {
+        this.authService = authService;
+    }
 
     @PostMapping("/register")
-    public ResponseEntity<AuthResponseDto> register(@RequestBody RegisterRequestDto dto) {
+    public ResponseEntity<AuthResponse> register(@RequestBody RegisterRequest request) {
         try {
-            return ResponseEntity.ok(authService.register(dto.getName(), dto.getEmail(), dto.getPassword()));
+            return ResponseEntity.status(201).body(authService.register(request));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().build();
         }
     }
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponseDto> login(@RequestBody LoginRequestDto dto) {
+    public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request) {
         try {
-            return ResponseEntity.ok(authService.login(dto.getEmail(), dto.getPassword()));
+            return ResponseEntity.ok(authService.login(request));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(401).build();
+        }
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<UserResponse> me(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        try {
+            return ResponseEntity.ok(authService.me(authorization));
         } catch (RuntimeException e) {
             return ResponseEntity.status(401).build();
         }
     }
 
     @DeleteMapping("/logout")
-    public ResponseEntity<Void> logout(@RequestHeader(value="Authorization", required=false) String authHeader) {
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            authService.logout(token);
-        }
+    public ResponseEntity<Void> logout(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        authService.logout(authorization);
         return ResponseEntity.noContent().build();
     }
 }

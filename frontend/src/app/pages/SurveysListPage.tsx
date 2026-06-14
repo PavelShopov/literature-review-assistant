@@ -6,6 +6,8 @@ import { motion } from "motion/react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import { EditSurveyModal } from "../components/EditSurveyModal";
+import { deleteSurvey, getSurveys, saveSurvey } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 
 export interface Survey {
   id: string;
@@ -15,33 +17,6 @@ export interface Survey {
   status: "In Progress" | "Completed" | "Draft";
   totalArticles: number;
 }
-
-const mockSurveys: Survey[] = [
-  {
-    id: "survey-001",
-    name: "Impact of AI on Healthcare Outcomes",
-    description: "A systematic literature review examining the effectiveness and implementation of artificial intelligence technologies in healthcare settings.",
-    createdDate: "2024-03-15",
-    status: "In Progress",
-    totalArticles: 6,
-  },
-  {
-    id: "survey-002",
-    name: "Climate Change and Agricultural Productivity",
-    description: "Analyzing the relationship between climate change factors and crop yields across different geographic regions.",
-    createdDate: "2024-02-20",
-    status: "In Progress",
-    totalArticles: 12,
-  },
-  {
-    id: "survey-003",
-    name: "Remote Work and Employee Wellbeing",
-    description: "Investigating the psychological and productivity impacts of remote work arrangements post-pandemic.",
-    createdDate: "2024-01-10",
-    status: "Completed",
-    totalArticles: 8,
-  },
-];
 
 const statusConfig = {
   "In Progress": {
@@ -63,19 +38,16 @@ const statusConfig = {
 
 export default function SurveysListPage() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   // const [surveys, setSurveys] = useState<Survey[]>(mockSurveys);
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingSurvey, setEditingSurvey] = useState<Survey | null>(null);
   useEffect(() => {
-    fetch("http://localhost:8080/api/surveys")
-        .then((res) => res.json())
-        .then((data) => {
-          console.log("Surveys from backend:", data);
-          setSurveys(data);
-        })
-        .catch((err) => console.error("Fetch error:", err));
+    getSurveys()
+      .then(setSurveys)
+      .catch((err) => console.error("Fetch error:", err));
   }, []);
 
   const filteredSurveys = surveys.filter((survey) =>
@@ -97,11 +69,13 @@ export default function SurveysListPage() {
   const handleSaveSurvey = (surveyData: Omit<Survey, "id" | "createdDate" | "totalArticles">) => {
     if (editingSurvey) {
       // Update existing survey
+      const updatedSurvey = { ...editingSurvey, ...surveyData };
       setSurveys(surveys.map((s) =>
         s.id === editingSurvey.id
-          ? { ...s, ...surveyData }
+          ? updatedSurvey
           : s
       ));
+      saveSurvey(updatedSurvey).catch((err) => console.error("Save survey error:", err));
       toast.success("Survey updated successfully!");
     } else {
       // Create new survey
@@ -112,6 +86,7 @@ export default function SurveysListPage() {
         totalArticles: 0,
       };
       setSurveys([newSurvey, ...surveys]);
+      saveSurvey(newSurvey).catch((err) => console.error("Save survey error:", err));
       toast.success("Survey created successfully!");
     }
     setIsEditModalOpen(false);
@@ -121,6 +96,7 @@ export default function SurveysListPage() {
     e.stopPropagation();
     if (confirm("Are you sure you want to delete this survey? This action cannot be undone.")) {
       setSurveys(surveys.filter((s) => s.id !== surveyId));
+      deleteSurvey(surveyId).catch((err) => console.error("Delete survey error:", err));
       toast.success("Survey deleted");
     }
   };
@@ -143,13 +119,27 @@ export default function SurveysListPage() {
                 Manage your systematic literature reviews
               </p>
             </div>
-            <button
-              onClick={handleAddSurvey}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              New Survey
-            </button>
+            <div className="flex items-center gap-3">
+              {user && (
+                <div className="hidden sm:block text-right">
+                  <p className="text-sm font-medium text-gray-900">{user.name}</p>
+                  <button
+                    type="button"
+                    onClick={() => logout().then(() => navigate("/login"))}
+                    className="text-xs font-medium text-gray-500 hover:text-gray-900"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={handleAddSurvey}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                New Survey
+              </button>
+            </div>
           </div>
 
           {/* Search */}

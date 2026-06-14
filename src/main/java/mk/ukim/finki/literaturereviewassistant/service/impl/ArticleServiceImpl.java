@@ -2,9 +2,9 @@ package mk.ukim.finki.literaturereviewassistant.service.impl;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import mk.ukim.finki.literaturereviewassistant.model.*;
-import mk.ukim.finki.literaturereviewassistant.repository.*;
+import mk.ukim.finki.literaturereviewassistant.repository.ArticleRepository;
+import mk.ukim.finki.literaturereviewassistant.repository.AuthorRepository;
 import mk.ukim.finki.literaturereviewassistant.service.ArticleService;
-import mk.ukim.finki.literaturereviewassistant.service.GeminiService;
 import mk.ukim.finki.literaturereviewassistant.service.DataService.BibEntry;
 import mk.ukim.finki.literaturereviewassistant.service.DataService.BibTexParser;
 import mk.ukim.finki.literaturereviewassistant.service.DataService.PdfExtractorService;
@@ -12,12 +12,7 @@ import mk.ukim.finki.literaturereviewassistant.service.DataService.ArticleMetada
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.ObjectMapper;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.*;
 
 @Service
@@ -27,15 +22,15 @@ public class ArticleServiceImpl implements ArticleService{
 
     private final ArticleRepository articleRepository;
     private final AuthorRepository authorRepository;
-    private final SurveyRepository  surveyRepository;
+    private final SurveyRepository surveyRepository;
     private final DocumentRepository documentRepository;
-    private final PromptRepository   promptRepository;
+    private final PromptRepository promptRepository;
 
+    // ─── External / AI clients (inject your own implementations) ─────────────
     private final BibTexParser bibTexParser;          // parses .bib files
     private final PdfExtractorService pdfExtractorService;   // extracts text / metadata from PDFs
     private final SemanticScholarClient semanticScholarClient; // calls the Semantic Scholar API
-    private final GeminiService  geminiService;  // wraps the Gemini API
-
+    private final LlmAnnotationService  llmAnnotationService;  // wraps the LLM (e.g. Claude / GPT)
 
     @Override
     @Transactional(readOnly = true)
@@ -101,6 +96,7 @@ public class ArticleServiceImpl implements ArticleService{
 
     @Override
     public Article importFromUrl(String url) {
+        // Return existing article if already imported
         return articleRepository.findByUrl(url).orElseGet(() -> {
             ArticleMetadata meta = pdfExtractorService.extractFromUrl(url);
 
@@ -228,7 +224,7 @@ public class ArticleServiceImpl implements ArticleService{
 
     @Override
     @Transactional(readOnly = true)
-    public List<Map<String, Object>> findAuthorsByArticle(Long articleId) {
+    public List<Author> findAuthorsByArticle(Long articleId) {
         return getArticleOrThrow(articleId).getAuthors();
     }
 
@@ -261,15 +257,10 @@ public class ArticleServiceImpl implements ArticleService{
         Prompt prompt  = getPromptOrThrow(promptId);
 
         String context = buildContext(article, useFullText);
-        GeminiService.AnswerResult answerResult = geminiService.annotateContext(context, prompt);
-
-        Map<String, Object> result = new HashMap<>();
-        result.put("include", answerResult.include());
-        result.put("explanation", answerResult.explanation());
-        result.put("rawJson", answerResult.rawJson());
+        Map<String, Object> result = llmAnnotationService.annotate(context, prompt);
 
         // Persist the annotation result linked to the article
-        saveAnnotationResult(article, prompt, result);
+        llmAnnotationService.saveAnnotationResult(article, prompt, result);
         return result;
     }
 
@@ -281,13 +272,9 @@ public class ArticleServiceImpl implements ArticleService{
         String context = buildContext(article, useFullText);
 
         // Expects LLM to return { "answer": true/false, "explanation": "..." }
-        GeminiService.AnswerResult answerResult = geminiService.annotateContext(context, prompt);
+        Map<String, Object> result = llmAnnotationService.ask(context, prompt);
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("answer", answerResult.include());
-        result.put("explanation", answerResult.explanation());
-
-        saveAnnotationResult(article, prompt, result);
+        llmAnnotationService.saveAnnotationResult(article, prompt, result);
         return result;
     }
 
@@ -374,6 +361,10 @@ public class ArticleServiceImpl implements ArticleService{
         return authors;
     }
 
+    /**
+     * Build the text context sent to the LLM.
+     * If useFullText is true and a Document with extracted text exists, append it.
+     */
     private String buildContext(Article article, boolean useFullText) {
         StringBuilder sb = new StringBuilder();
 
@@ -392,7 +383,9 @@ public class ArticleServiceImpl implements ArticleService{
         return sb.toString().trim();
     }
 
-
+    /**
+     * Create and persist a Document entity linked to the given article.
+     */
     private void attachDocument(Article article, byte[] content, DocumentType type) {
         String baseDir = "uploads/documents/"; // Ensure this directory exists
         String fileName = UUID.randomUUID().toString() + ".pdf";
