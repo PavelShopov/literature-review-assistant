@@ -18,6 +18,14 @@ public class Survey {
 
     private String title;
 
+    private String description;
+    
+    private java.time.LocalDate createdDate;
+    
+    private String status; // In Progress, Completed, Draft
+    
+    private String researchQuestion;
+
     @ElementCollection
     private List<String> keywords;
 

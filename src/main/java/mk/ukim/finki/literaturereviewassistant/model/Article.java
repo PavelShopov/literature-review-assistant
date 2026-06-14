@@ -16,8 +16,17 @@ public class Article {
     private String url;
     private String title;
     private String doi;
+    
+    private String journal;
+    private Integer year;
+    private String status; // INCLUDED, EXCLUDED, PENDING
+    
+    @Column(columnDefinition = "TEXT")
+    private String inclusionSummary;
 
-
+    @ManyToOne
+    @JoinColumn(name = "added_by_id")
+    private AppUser addedBy;
 
     @Column(columnDefinition = "TEXT")
     private String articleAbstract;
