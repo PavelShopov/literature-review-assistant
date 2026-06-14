@@ -1,16 +1,17 @@
 package mk.ukim.finki.literaturereviewassistant.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import mk.ukim.finki.literaturereviewassistant.config.GeminiConfig;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import mk.ukim.finki.literaturereviewassistant.model.Article;
+import mk.ukim.finki.literaturereviewassistant.model.Prompts;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class GeminiService {
@@ -20,24 +21,43 @@ public class GeminiService {
 
     private final RestTemplate restTemplate;
     private final GeminiConfig geminiConfig;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public GeminiService(RestTemplate restTemplate, GeminiConfig geminiConfig) {
         this.restTemplate = restTemplate;
         this.geminiConfig = geminiConfig;
     }
 
-    public String annotate(String abstractText, String promptText) {
-        String fullPrompt = promptText + "\n\nArticle abstract:\n" + abstractText;
-        return callGemini(fullPrompt);
-    }
-
-    public AskResult ask(String abstractText, String promptText) {
-        String fullPrompt = promptText +
-                "\n\nArticle abstract:\n" + abstractText +
-                "\n\nRespond in JSON format: {\"matches\": true/false, \"reason\": \"...\"}";
+    /**
+     * Праќа title + abstract на article и promptText до Gemini.
+     * Враќа структуриран AnswerResult со include (true/false), explanation и rawJson.
+     */
+    public AnswerResult annotateArticle(Article article, Prompts prompt) {
+        String fullPrompt = prompt.getPromptText() +
+                "\n\nArticle title: " + article.getTitle() +
+                "\n\nArticle abstract:\n" + article.getArticleAbstract() +
+                "\n\nRespond ONLY in JSON format: {\"include\": true/false, \"explanation\": \"...\"}";
 
         String raw = callGemini(fullPrompt);
-        return new AskResult(raw);
+
+        try {
+            String cleaned = raw.replaceAll("```json", "").replaceAll("```", "").trim();
+            JsonNode node = objectMapper.readTree(cleaned);
+            boolean include = node.get("include").asBoolean();
+            String explanation = node.has("explanation") ? node.get("explanation").asText() : "";
+            return new AnswerResult(include, explanation, cleaned);
+        } catch (Exception e) {
+            return new AnswerResult(false, "Failed to parse Gemini response: " + e.getMessage(), raw);
+        }
+    }
+
+    /**
+     * Го повикува annotateArticle за секој article и ги враќа само оние со include = true.
+     */
+    public List<Article> getPositiveArticles(List<Article> articles, Prompts prompt) {
+        return articles.stream()
+                .filter(article -> annotateArticle(article, prompt).include())
+                .collect(Collectors.toList());
     }
 
     private String callGemini(String prompt) {
@@ -55,6 +75,7 @@ public class GeminiService {
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+
         ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
 
         if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
@@ -73,6 +94,5 @@ public class GeminiService {
         throw new RuntimeException("Gemini API call failed with status: " + response.getStatusCode());
     }
 
-    public record AskResult(String rawJson) {
-    }
+    public record AnswerResult(boolean include, String explanation, String rawJson) {}
 }
