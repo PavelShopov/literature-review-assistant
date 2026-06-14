@@ -11,7 +11,12 @@ public class Document {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long documentId;
-    private String type; // e.g., "PDF"
+    private String title;
+
+    @Enumerated(EnumType.STRING)
+    private DocumentType type;
+    
+    @Column(columnDefinition = "TEXT")
     private String filePath;
 
     @ManyToOne

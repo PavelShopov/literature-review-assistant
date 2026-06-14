@@ -21,4 +21,6 @@ public class Author {
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     private List<Article> articles;
+
+    
 }

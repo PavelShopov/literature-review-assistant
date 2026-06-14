@@ -10,6 +10,7 @@ import static lombok.ToString.*;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
+@Entity
 public class Survey {
 
     @Id
@@ -21,13 +22,9 @@ public class Survey {
     @ElementCollection
     private List<String> keywords;
 
-    @ManyToMany
-    @JoinTable(
-            name = "survey_article",
-            joinColumns = @JoinColumn(name = "survey_id"),
-            inverseJoinColumns = @JoinColumn(name = "article_id")
-    )
-    @ToString.Exclude
+
+    @ManyToMany(mappedBy = "surveys")
+    @Exclude
     @EqualsAndHashCode.Exclude
     private List<Article> articles;
 

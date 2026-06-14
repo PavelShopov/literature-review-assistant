@@ -13,7 +13,6 @@ public class Article {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long articleId;
-
     private String url;
     private String title;
     private String doi;
@@ -31,21 +30,18 @@ public class Article {
     @EqualsAndHashCode.Exclude
     private List<Author> authors;
 
-    @ManyToMany(mappedBy = "articles")
-    private List<Survey> surveys = new ArrayList<>();
-
-
-// Source - https://stackoverflow.com/a/60799284
-// Posted by twobiers, modified by community. See post 'Timeline' for change history
-// Retrieved 2026-05-06, License - CC BY-SA 4.0
-
-//    @ManyToMany(mappedBy = "survey")
-//    var persons: MutableList<Survey> = mutableListOf()
-
-
+    @ManyToMany
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private List<Survey> surveys;
 
     @OneToMany(mappedBy = "article", cascade = CascadeType.ALL)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     private List<Document> documents;
+
+    @OneToMany(mappedBy = "article", cascade = CascadeType.ALL)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private List<AnnotationResult> annotationResults;
 }
