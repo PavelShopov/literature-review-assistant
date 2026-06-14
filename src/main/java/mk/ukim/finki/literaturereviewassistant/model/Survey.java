@@ -10,7 +10,6 @@ import static lombok.ToString.*;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Entity
 public class Survey {
 
     @Id
@@ -31,5 +30,5 @@ public class Survey {
     @OneToMany(mappedBy = "survey", cascade = CascadeType.ALL)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
-    private List<Prompts> prompts;
+    private List<Prompt> prompts;
 }

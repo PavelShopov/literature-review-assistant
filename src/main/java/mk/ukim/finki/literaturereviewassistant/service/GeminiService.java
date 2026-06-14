@@ -35,9 +35,18 @@ public class GeminiService {
      * Враќа структуриран AnswerResult со include (true/false), explanation и rawJson.
      */
     public AnswerResult annotateArticle(Article article, Prompt prompt) {
+        String context = "Article title: " + article.getTitle() +
+                "\n\nArticle abstract:\n" + article.getArticleAbstract();
+        return annotateContext(context, prompt);
+    }
+
+    /**
+     * Праќа custom context и promptText до Gemini.
+     * Враќа структуриран AnswerResult со include (true/false), explanation и rawJson.
+     */
+    public AnswerResult annotateContext(String context, Prompt prompt) {
         String fullPrompt = prompt.getPromptText() +
-                "\n\nArticle title: " + article.getTitle() +
-                "\n\nArticle abstract:\n" + article.getArticleAbstract() +
+                "\n\nContext:\n" + context +
                 "\n\nRespond ONLY in JSON format: {\"include\": true/false, \"explanation\": \"...\"}";
 
         String raw = callGemini(fullPrompt);

@@ -17,6 +17,8 @@ public class Article {
     private String title;
     private String doi;
 
+
+
     @Column(columnDefinition = "TEXT")
     private String articleAbstract;
 

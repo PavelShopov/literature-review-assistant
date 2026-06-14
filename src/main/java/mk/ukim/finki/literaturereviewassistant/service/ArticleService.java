@@ -90,52 +90,48 @@ public interface ArticleService {
 
         Article removeAuthor(Long articleId, Long authorId);
 
+        /**
+         * Run a structured annotation prompt over the article's abstract and/or
+         * full text. Returns a JSON map keyed by the fields defined in the Prompt.
+         *
+         * @param articleId  target article
+         * @param promptId   which Prompt template to use
+         * @param useFullText if true, full document text is included; otherwise
+         *                    only the abstract is sent
+         * @return structured JSON annotation result (stored as AnnotationResult)
+         */
         Map<String, Object> annotate(Long articleId, Long promptId, boolean useFullText);
 
-        // ─── AI Annotation ───────────────────────────────────────────────────────
+        /**
+         * Ask a yes/no inclusion question about the article using the given Prompt.
+         * Returns a map with keys: "answer" (true/false) and "explanation" (String).
+         *
+         * @param articleId  target article
+         * @param promptId   which Prompt template to use (should be a boolean prompt)
+         * @param useFullText if true, full text is included; otherwise abstract only
+         * @return map with "answer" (Boolean) and "explanation" (String)
+         */
+        Map<String, Object> ask(Long articleId, Long promptId, boolean useFullText);
 
-//        /**
-//         * Run a structured annotation prompt over the article's abstract and/or
-//         * full text. Returns a JSON map keyed by the fields defined in the Prompt.
-//         *
-//         * @param articleId  target article
-//         * @param promptId   which Prompt template to use
-//         * @param useFullText if true, full document text is included; otherwise
-//         *                    only the abstract is sent
-//         * @return structured JSON annotation result (stored as AnnotationResult)
-//         */
-//        Map<String, Object> annotate(Long articleId, Long promptId, boolean useFullText);
-//
-//        /**
-//         * Ask a yes/no inclusion question about the article using the given Prompt.
-//         * Returns a map with keys: "answer" (true/false) and "explanation" (String).
-//         *
-//         * @param articleId  target article
-//         * @param promptId   which Prompt template to use (should be a boolean prompt)
-//         * @param useFullText if true, full text is included; otherwise abstract only
-//         * @return map with "answer" (Boolean) and "explanation" (String)
-//         */
-//        Map<String, Object> ask(Long articleId, Long promptId, boolean useFullText);
-//
-//        /**
-//         * Batch-annotate all articles in a survey using the same prompt template.
-//         *
-//         * @param surveyId    survey whose articles will be annotated
-//         * @param promptId    prompt template id
-//         * @param useFullText whether to use full text or abstract only
-//         * @return map of articleId → annotation result
-//         */
-//        Map<Long, Map<String, Object>> batchAnnotate(Long surveyId, Long promptId, boolean useFullText);
-//
-//        /**
-//         * Batch-ask inclusion/exclusion question for all articles in a survey.
-//         *
-//         * @param surveyId    survey whose articles will be screened
-//         * @param promptId    boolean prompt template id
-//         * @param useFullText whether to use full text or abstract only
-//         * @return map of articleId → {answer, explanation}
-//         */
-//        Map<Long, Map<String, Object>> batchAsk(Long surveyId, Long promptId, boolean useFullText);
+        /**
+         * Batch-annotate all articles in a survey using the same prompt template.
+         *
+         * @param surveyId    survey whose articles will be annotated
+         * @param promptId    prompt template id
+         * @param useFullText whether to use full text or abstract only
+         * @return map of articleId → annotation result
+         */
+        Map<Long, Map<String, Object>> batchAnnotate(Long surveyId, Long promptId, boolean useFullText);
+
+        /**
+         * Batch-ask inclusion/exclusion question for all articles in a survey.
+         *
+         * @param surveyId    survey whose articles will be screened
+         * @param promptId    boolean prompt template id
+         * @param useFullText whether to use full text or abstract only
+         * @return map of articleId → {answer, explanation}
+         */
+        Map<Long, Map<String, Object>> batchAsk(Long surveyId, Long promptId, boolean useFullText);
 }
 
 
