@@ -180,7 +180,7 @@ public class SurveyController {
         
         List<String> authorNames = new ArrayList<>();
         if (article.getAuthors() != null) {
-            article.getAuthors().forEach(a -> authorNames.add(a.getName()));
+            article.getAuthors().forEach(a -> authorNames.add(a.getFullName()));
         }
         dto.setAuthors(authorNames);
         
