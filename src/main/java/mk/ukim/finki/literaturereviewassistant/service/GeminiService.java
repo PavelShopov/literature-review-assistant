@@ -1,7 +1,11 @@
 package mk.ukim.finki.literaturereviewassistant.service;
 
 import mk.ukim.finki.literaturereviewassistant.config.GeminiConfig;
-import org.springframework.http.*;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -22,19 +26,11 @@ public class GeminiService {
         this.geminiConfig = geminiConfig;
     }
 
-    /**
-     * Sends the article abstract + prompt text to Gemini and returns the raw JSON string response.
-     * Backend colleague stores this in AnnotationResult.jsonResponse.
-     */
     public String annotate(String abstractText, String promptText) {
         String fullPrompt = promptText + "\n\nArticle abstract:\n" + abstractText;
         return callGemini(fullPrompt);
     }
 
-    /**
-     * Asks Gemini to evaluate whether an article matches survey criteria.
-     * Returns AskResult with a boolean decision and explanation.
-     */
     public AskResult ask(String abstractText, String promptText) {
         String fullPrompt = promptText +
                 "\n\nArticle abstract:\n" + abstractText +
@@ -59,7 +55,6 @@ public class GeminiService {
         headers.setContentType(MediaType.APPLICATION_JSON);
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-
         ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
 
         if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
@@ -78,5 +73,6 @@ public class GeminiService {
         throw new RuntimeException("Gemini API call failed with status: " + response.getStatusCode());
     }
 
-    public record AskResult(String rawJson) {}
+    public record AskResult(String rawJson) {
+    }
 }
