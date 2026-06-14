@@ -1,13 +1,15 @@
 package mk.ukim.finki.literaturereviewassistant.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+//import com.fasterxml.jackson.databind.JsonNode;
+//import com.fasterxml.jackson.databind.ObjectMapper;
 import mk.ukim.finki.literaturereviewassistant.config.GeminiConfig;
 import mk.ukim.finki.literaturereviewassistant.model.Article;
-import mk.ukim.finki.literaturereviewassistant.model.Prompts;
+import mk.ukim.finki.literaturereviewassistant.model.Prompt;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Map;
@@ -32,7 +34,7 @@ public class GeminiService {
      * Праќа title + abstract на article и promptText до Gemini.
      * Враќа структуриран AnswerResult со include (true/false), explanation и rawJson.
      */
-    public AnswerResult annotateArticle(Article article, Prompts prompt) {
+    public AnswerResult annotateArticle(Article article, Prompt prompt) {
         String fullPrompt = prompt.getPromptText() +
                 "\n\nArticle title: " + article.getTitle() +
                 "\n\nArticle abstract:\n" + article.getArticleAbstract() +
@@ -54,7 +56,7 @@ public class GeminiService {
     /**
      * Го повикува annotateArticle за секој article и ги враќа само оние со include = true.
      */
-    public List<Article> getPositiveArticles(List<Article> articles, Prompts prompt) {
+    public List<Article> getPositiveArticles(List<Article> articles, Prompt prompt) {
         return articles.stream()
                 .filter(article -> annotateArticle(article, prompt).include())
                 .collect(Collectors.toList());
