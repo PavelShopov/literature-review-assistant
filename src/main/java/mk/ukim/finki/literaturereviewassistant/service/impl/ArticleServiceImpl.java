@@ -189,8 +189,17 @@ public class ArticleServiceImpl implements ArticleService{
         Article article = getArticleOrThrow(articleId);
         Survey survey  = getSurveyOrThrow(surveyId);
 
-        if (!article.getSurveys().contains(survey)) {
-            article.getSurveys().add(survey);
+        // Check if the link already exists via the bridge entity
+        boolean alreadyLinked = article.getSurveyLinks().stream()
+                .anyMatch(link -> link.getSurvey().getSurveyId().equals(surveyId));
+
+        if (!alreadyLinked) {
+            ArticleSurvey bridgeLink = new ArticleSurvey();
+            bridgeLink.setSurvey(survey);
+            bridgeLink.setArticle(article);
+            bridgeLink.setStatus(ArticleStatus.PENDING); // Or whichever default status your enum has
+
+            article.getSurveyLinks().add(bridgeLink);
         }
         return articleRepository.save(article);
     }
@@ -198,9 +207,10 @@ public class ArticleServiceImpl implements ArticleService{
     @Override
     public Article removeFromSurvey(Long articleId, Long surveyId) {
         Article article = getArticleOrThrow(articleId);
-        Survey  survey  = getSurveyOrThrow(surveyId);
 
-        article.getSurveys().remove(survey);
+        // Remove the bridge relation from the collection
+        article.getSurveyLinks().removeIf(link -> link.getSurvey().getSurveyId().equals(surveyId));
+
         return articleRepository.save(article);
     }
 
@@ -208,15 +218,17 @@ public class ArticleServiceImpl implements ArticleService{
     @Transactional(readOnly = true)
     public List<Article> findBySurvey(Long surveyId) {
         Survey survey = getSurveyOrThrow(surveyId);
-        return articleRepository.findBySurveysContaining(survey);
+        // Extract articles out from the survey's bridge links
+        return survey.getArticleLinks().stream()
+                .map(ArticleSurvey::getArticle)
+                .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<Article> searchInSurvey(Long surveyId, String keyword) {
-        Survey survey = getSurveyOrThrow(surveyId);
         String kw = keyword.toLowerCase();
-        return articleRepository.findBySurveysContaining(survey).stream()
+        return findBySurvey(surveyId).stream()
                 .filter(a -> (a.getTitle() != null && a.getTitle().toLowerCase().contains(kw))
                         || (a.getArticleAbstract() != null && a.getArticleAbstract().toLowerCase().contains(kw)))
                 .toList();

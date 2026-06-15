@@ -1,16 +1,18 @@
 package mk.ukim.finki.literaturereviewassistant.model;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.ManyToOne;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import java.time.Instant;
+
+/*
+* The reviewer class each reviewer is connected to a user
+ */
 
 @Data
 @AllArgsConstructor
@@ -27,6 +29,18 @@ public class Reviewer {
     private String role;
     private Instant addedDate;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    private Survey survey;
+    @OneToOne(cascade = {CascadeType.MERGE, CascadeType.REFRESH})
+    @JoinColumn(name = "AppUser_id")
+    private AppUser AppUser;
+
+    @ManyToMany(cascade = {CascadeType.MERGE})
+    @JoinTable(
+            name = "reviewer_survey", // Name of the hidden join table in the DB
+            joinColumns = @JoinColumn(name = "reviewer_id"), // FK pointing to Reviewer
+            inverseJoinColumns = @JoinColumn(name = "survey_id")  // FK pointing to Survey
+    )
+    private List<Survey> surveys = new ArrayList<>();
+
+    @OneToMany(mappedBy = "Reviewer", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Review> reviews;
 }

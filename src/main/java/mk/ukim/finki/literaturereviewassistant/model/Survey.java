@@ -36,18 +36,16 @@ public class Survey {
     @ElementCollection
     private List<String> keywords = new ArrayList<>();
 
-
-    @ManyToMany(mappedBy = "surveys")
-    @Exclude
-    @EqualsAndHashCode.Exclude
-    private List<Article> articles = new ArrayList<>();
+    @OneToMany(mappedBy = "survey", cascade = CascadeType.ALL, orphanRemoval = true)
+    @ToString.Exclude
+    private List<ArticleSurvey> articleLinks = new ArrayList<>();
 
     @OneToMany(mappedBy = "survey", cascade = CascadeType.ALL)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     private List<Prompt> prompts = new ArrayList<>();
 
-    @OneToMany(mappedBy = "survey", cascade = CascadeType.ALL, orphanRemoval = true)
+    @ManyToMany(mappedBy = "surveys",cascade = {CascadeType.MERGE})
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
     private List<Reviewer> reviewers = new ArrayList<>();

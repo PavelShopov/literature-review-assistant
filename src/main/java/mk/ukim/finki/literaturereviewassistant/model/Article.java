@@ -45,10 +45,9 @@ public class Article {
     @EqualsAndHashCode.Exclude
     private List<Author> authors = new ArrayList<>();
 
-    @ManyToMany
+    @OneToMany(mappedBy = "article", cascade = CascadeType.ALL, orphanRemoval = true)
     @ToString.Exclude
-    @EqualsAndHashCode.Exclude
-    private List<Survey> surveys = new ArrayList<>();
+    private List<ArticleSurvey> surveyLinks = new ArrayList<>();
 
     @OneToMany(mappedBy = "article", cascade = CascadeType.ALL)
     @ToString.Exclude

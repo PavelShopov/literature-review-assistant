@@ -8,7 +8,9 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ReviewerRepository extends JpaRepository<Reviewer, Long> {
-    List<Reviewer> findBySurvey(Survey survey);
+    List<Reviewer> findBySurveysContaining(Survey survey);
 
-    Optional<Reviewer> findBySurveyAndExternalId(Survey survey, String externalId);
+    Optional<Reviewer> findBySurveysContainingAndExternalId(Survey survey, String externalId);
+
+    Optional<Reviewer> findByEmail(String email);
 }

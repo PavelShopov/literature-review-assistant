@@ -1,14 +1,7 @@
 package mk.ukim.finki.literaturereviewassistant.service.impl;
 
 import jakarta.persistence.EntityNotFoundException;
-import mk.ukim.finki.literaturereviewassistant.model.AppUser;
-import mk.ukim.finki.literaturereviewassistant.model.Article;
-import mk.ukim.finki.literaturereviewassistant.model.Author;
-import mk.ukim.finki.literaturereviewassistant.model.Document;
-import mk.ukim.finki.literaturereviewassistant.model.DocumentType;
-import mk.ukim.finki.literaturereviewassistant.model.AuthSession;
-import mk.ukim.finki.literaturereviewassistant.model.Reviewer;
-import mk.ukim.finki.literaturereviewassistant.model.Survey;
+import mk.ukim.finki.literaturereviewassistant.model.*;
 import mk.ukim.finki.literaturereviewassistant.repository.ArticleRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.AuthorRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.AuthSessionRepository;
@@ -106,13 +99,17 @@ public class SurveyServiceImpl implements SurveyService {
     @Override
     @Transactional
     public SurveyDto saveSurvey(String surveyId, SurveyRequest request, String authorizationHeader) {
-        Survey survey = surveyRepository.findByExternalId(surveyId).orElseGet(() -> {
-            Survey created = new Survey();
-            created.setExternalId(surveyId);
-            created.setCreatedDate(LocalDate.now());
-            return created;
-        });
+        // 1. If surveyId is "new" or empty, treat it as a fresh creation and generate a proper UUID
+        boolean isNew = (surveyId == null || surveyId.isBlank() || "new".equalsIgnoreCase(surveyId));
 
+        Survey survey = isNew ? null : surveyRepository.findByExternalId(surveyId).orElse(null);
+        if (survey == null) {
+            survey = new Survey();
+            survey.setExternalId(isNew ? java.util.UUID.randomUUID().toString() : surveyId);
+            survey.setCreatedDate(LocalDate.now());
+        }
+
+        // 2. Map standard request fields
         survey.setTitle(request.name());
         survey.setDescription(request.description());
         survey.setStatus(request.status() == null ? "Draft" : request.status());
@@ -125,19 +122,33 @@ public class SurveyServiceImpl implements SurveyService {
             survey.setResearchQuestion("Define the main research question for this survey.");
         }
 
+        // 3. Save the survey and bind ownership relations
         Survey saved = surveyRepository.save(survey);
         ensureOwner(saved, authorizationHeader);
+
         return toSurveyDto(saved);
     }
 
     @Override
     @Transactional
     public void deleteSurvey(String surveyId) {
-        Survey survey = getSurveyOrThrow(surveyId);
-        for (Article article : new ArrayList<>(articleRepository.findBySurveyExternalId(surveyId))) {
-            deleteStoredFiles(article);
-            articleRepository.delete(article);
+        // 1. Find the survey or throw an error if it doesn't exist
+        Survey survey = surveyRepository.findByExternalId(surveyId)
+                .orElseThrow(() -> new EntityNotFoundException("Survey not found with external id: " + surveyId));
+
+        // 2. Clear out the Many-to-Many associations with Reviewers
+        // This removes rows from the hidden 'reviewer_survey' table safely
+        for (Reviewer reviewer : new ArrayList<>(survey.getReviewers())) {
+            reviewer.getSurveys().remove(survey);
         }
+        survey.getReviewers().clear();
+
+        // 3. Clear out the Article links
+        // Since 'articleLinks' has cascade = CascadeType.ALL and orphanRemoval = true,
+        // clearing this collection automatically deletes the rows from 'article_survey'
+        survey.getArticleLinks().clear();
+
+        // 4. Safely delete the survey entity from the database
         surveyRepository.delete(survey);
     }
 
@@ -260,7 +271,7 @@ public class SurveyServiceImpl implements SurveyService {
     @Override
     @Transactional(readOnly = true)
     public List<ReviewerDto> findReviewers(String surveyId) {
-        return reviewerRepository.findBySurvey(getSurveyOrThrow(surveyId)).stream().map(this::toReviewerDto).toList();
+        return reviewerRepository.findBySurveysContaining(getSurveyOrThrow(surveyId)).stream().map(this::toReviewerDto).toList();
     }
 
     @Override
@@ -268,13 +279,17 @@ public class SurveyServiceImpl implements SurveyService {
     public ReviewerDto addReviewer(String surveyId, ReviewerDto reviewer, String authorizationHeader) {
         Survey survey = getSurveyOrThrow(surveyId);
         ensureOwnerAccess(survey, authorizationHeader);
-        Reviewer saved = reviewerRepository.findBySurveyAndExternalId(survey, reviewer.id()).orElseGet(Reviewer::new);
+        Reviewer saved = reviewerRepository.findBySurveysContainingAndExternalId(survey, reviewer.id()).orElseGet(Reviewer::new);
         saved.setExternalId(reviewer.id());
         saved.setName(reviewer.name());
         saved.setEmail(reviewer.email());
         saved.setRole(reviewer.role() == null ? "Reviewer" : reviewer.role());
         saved.setAddedDate(reviewer.addedDate() == null ? Instant.now() : Instant.parse(reviewer.addedDate()));
-        saved.setSurvey(survey);
+
+        if (!saved.getSurveys().contains(survey)) {
+            saved.getSurveys().add(survey);
+        }
+
         return toReviewerDto(reviewerRepository.save(saved));
     }
 
@@ -283,7 +298,7 @@ public class SurveyServiceImpl implements SurveyService {
     public void removeReviewer(String surveyId, String reviewerId, String authorizationHeader) {
         Survey survey = getSurveyOrThrow(surveyId);
         ensureOwnerAccess(survey, authorizationHeader);
-        reviewerRepository.findBySurveyAndExternalId(survey, reviewerId)
+        reviewerRepository.findBySurveysContainingAndExternalId(survey, reviewerId)
                 .filter(reviewer -> !"Owner".equals(reviewer.getRole()))
                 .ifPresent(reviewerRepository::delete);
     }
@@ -636,6 +651,32 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private Article saveImportedArticle(Survey survey, AddedByDto addedBy, ArticleMetadata metadata, String fallbackFileName) {
+        // 1. Double check if the article already exists by DOI to prevent duplication
+        if (metadata.getDoi() != null && !metadata.getDoi().isBlank()) {
+            Optional<Article> existing = articleRepository.findByDoi(metadata.getDoi());
+            if (existing.isPresent()) {
+                Article existingArticle = existing.get();
+
+                // Link existing article to the new survey if not linked already
+                boolean alreadyLinked = existingArticle.getSurveyLinks().stream()
+                        .anyMatch(link -> link.getSurvey().getSurveyId().equals(survey.getSurveyId()));
+
+                if (!alreadyLinked) {
+                    ArticleSurvey link = new ArticleSurvey();
+                    link.setArticle(existingArticle);
+                    link.setSurvey(survey);
+                    link.setStatus(mk.ukim.finki.literaturereviewassistant.model.ArticleStatus.INCLUDED);
+
+                    existingArticle.getSurveyLinks().add(link);
+                    survey.getArticleLinks().add(link);
+
+                    return articleRepository.save(existingArticle);
+                }
+                return existingArticle;
+            }
+        }
+
+        // 2. Build the new Article entity
         Article article = new Article();
         article.setExternalId("article-" + UUID.randomUUID());
         article.setSurveyExternalId(survey.getExternalId());
@@ -650,6 +691,14 @@ public class SurveyServiceImpl implements SurveyService {
         article.setAddedByName(addedBy.name());
         article.setAddedByRole(addedBy.role());
         article.setAuthors(resolveOrCreateAuthors(metadata.getAuthorNames()));
+
+        ArticleSurvey link = new ArticleSurvey();
+        link.setArticle(article);
+        link.setSurvey(survey);
+        link.setStatus(mk.ukim.finki.literaturereviewassistant.model.ArticleStatus.PENDING); // Default join enum status
+
+        article.getSurveyLinks().add(link);
+        survey.getArticleLinks().add(link);
 
         Article saved = articleRepository.save(article);
         attachPdfDocumentIfPresent(saved, metadata, fallbackFileName);
@@ -902,22 +951,40 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private void ensureOwner(Survey survey, String authorizationHeader) {
-        if (reviewerRepository.findBySurvey(survey).stream().anyMatch(reviewer -> "Owner".equals(reviewer.getRole()))) {
+        if (reviewerRepository.findBySurveysContaining(survey).stream().anyMatch(reviewer -> "Owner".equals(reviewer.getRole()))) {
             return;
         }
 
         Optional<AppUser> currentUser = currentUser(authorizationHeader);
+
+        // 1. Initialize an empty list of surveys to pass to the constructor
+        List<Survey> associatedSurveys = new java.util.ArrayList<>();
+        associatedSurveys.add(survey);
+
         Reviewer owner = currentUser
                 .map(user -> new Reviewer(
                         null,
-                        "owner",
+                        java.util.UUID.randomUUID().toString(), // Use a random UUID instead of literal "owner" to prevent duplicate key errors
                         user.getName(),
                         user.getEmail(),
                         "Owner",
                         Instant.now(),
-                        survey
+                        user,               // Maps to: private AppUser AppUser;
+                        associatedSurveys,  // Maps to: private List<Survey> surveys;
+                        new java.util.ArrayList<>() // Maps to: private List<ReviewHistory> reviewHistories;
                 ))
-                .orElseGet(() -> new Reviewer(null, "owner", "Survey Owner", "owner@example.com", "Owner", Instant.now(), survey));
+                .orElseGet(() -> new Reviewer(
+                        null,
+                        java.util.UUID.randomUUID().toString(),
+                        "Survey Owner",
+                        "owner@example.com",
+                        "Owner",
+                        Instant.now(),
+                        null,
+                        associatedSurveys,
+                        new java.util.ArrayList<>()
+                ));
+
         reviewerRepository.save(owner);
     }
 
@@ -937,7 +1004,7 @@ public class SurveyServiceImpl implements SurveyService {
         List<Article> articles = articleRepository.findBySurveyExternalId(survey.getExternalId());
         int screened = (int) articles.stream().filter(article -> "INCLUDED".equals(article.getStatus()) || "EXCLUDED".equals(article.getStatus())).count();
         int pending = (int) articles.stream().filter(article -> "PENDING".equals(article.getStatus())).count();
-        Reviewer ownerReviewer = reviewerRepository.findBySurvey(survey).stream()
+        Reviewer ownerReviewer = reviewerRepository.findBySurveysContaining(survey).stream()
                 .filter(reviewer -> "Owner".equals(reviewer.getRole()))
                 .findFirst()
                 .orElse(null);
@@ -1036,7 +1103,7 @@ public class SurveyServiceImpl implements SurveyService {
         Optional<AppUser> current = currentUser(authorizationHeader);
         if (current.isPresent()) {
             AppUser user = current.get();
-            boolean owner = reviewerRepository.findBySurvey(survey).stream()
+            boolean owner = reviewerRepository.findBySurveysContaining(survey).stream()
                     .anyMatch(reviewer -> "Owner".equals(reviewer.getRole()) && user.getEmail().equalsIgnoreCase(reviewer.getEmail()));
             return new AddedByDto(
                     user.getId() == null ? user.getEmail() : user.getId().toString(),
@@ -1069,7 +1136,7 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private boolean isCurrentUserSurveyOwner(Survey survey, AppUser currentUser) {
-        Reviewer owner = reviewerRepository.findBySurvey(survey).stream()
+        Reviewer owner = reviewerRepository.findBySurveysContaining(survey).stream()
                 .filter(reviewer -> "Owner".equals(reviewer.getRole()))
                 .findFirst()
                 .orElse(null);
@@ -1107,11 +1174,17 @@ public class SurveyServiceImpl implements SurveyService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Not authenticated"));
     }
 
-    private String extractToken(String authorization) {
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
+    private String extractToken(String authorizationHeader) {
+        if (authorizationHeader == null || authorizationHeader.isBlank()) {
             return "";
         }
-        return authorization.substring("Bearer ".length()).trim();
+
+        // Handles case-insensitive "bearer " tokens and trims any stray spaces
+        if (authorizationHeader.toLowerCase().startsWith("bearer ")) {
+            return authorizationHeader.substring(7).trim();
+        }
+
+        return authorizationHeader.trim();
     }
 
     private byte[] decodePdfBytes(String input) {

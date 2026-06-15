@@ -13,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -103,9 +104,38 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void addDefaultReviewers(Survey survey) {
-        reviewerRepository.save(new Reviewer(null, "owner", "Survey Owner", "owner@example.com", "Owner", Instant.now(), survey));
-        reviewerRepository.save(new Reviewer(null, "reviewer-1", "Ana Petrova", "ana.petrova@example.com", "Reviewer", Instant.now(), survey));
-        reviewerRepository.save(new Reviewer(null, "reviewer-2", "Mark Johnson", "mark.johnson@example.com", "Reviewer", Instant.now(), survey));
+        // 1. Create the Owner
+        Reviewer owner = new Reviewer();
+        owner.setExternalId("owner");
+        owner.setName("Survey Owner");
+        owner.setEmail("owner@example.com");
+        owner.setRole("Owner");
+        owner.setAddedDate(Instant.now());
+        owner.setSurveys(new ArrayList<>());
+        owner.getSurveys().add(survey);
+        reviewerRepository.save(owner);
+
+        // 2. Create Default Reviewer 1
+        Reviewer reviewer1 = new Reviewer();
+        reviewer1.setExternalId("reviewer-1");
+        reviewer1.setName("Ana Petrova");
+        reviewer1.setEmail("ana.petrova@example.com");
+        reviewer1.setRole("Reviewer");
+        reviewer1.setAddedDate(Instant.now());
+        reviewer1.setSurveys(new ArrayList<>());
+        reviewer1.getSurveys().add(survey);
+        reviewerRepository.save(reviewer1);
+
+        // 3. Create Default Reviewer 2
+        Reviewer reviewer2 = new Reviewer();
+        reviewer2.setExternalId("reviewer-2");
+        reviewer2.setName("Mark Johnson");
+        reviewer2.setEmail("mark.johnson@example.com");
+        reviewer2.setRole("Reviewer");
+        reviewer2.setAddedDate(Instant.now());
+        reviewer2.setSurveys(new ArrayList<>());
+        reviewer2.getSurveys().add(survey);
+        reviewerRepository.save(reviewer2);
     }
 
     private void createArticle(
