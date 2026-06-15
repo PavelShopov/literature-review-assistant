@@ -19,6 +19,9 @@ public class Document {
     @Column(columnDefinition = "TEXT")
     private String filePath;
 
+    @Column(columnDefinition = "TEXT")
+    private String extractedText;
+
     @ManyToOne
     @JoinColumn(name = "article_id")
     private Article article;

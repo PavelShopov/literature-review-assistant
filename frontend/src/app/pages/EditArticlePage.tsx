@@ -4,70 +4,7 @@ import { ArrowLeft, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import type { ArticleStatus } from "../components/ArticleCard";
-
-// This would come from a data store in a real app
-const mockArticles = {
-  "1": {
-    id: "1",
-    title: "Deep Learning Applications in Medical Image Analysis: A Systematic Review",
-    authors: ["Smith, J.", "Johnson, A.", "Williams, B."],
-    journal: "Journal of Medical Imaging",
-    year: 2024,
-    doi: "10.1000/jmi.2024.001",
-    status: "INCLUDED" as ArticleStatus,
-    abstract: "This systematic review examines the current state of deep learning applications in medical image analysis.",
-  },
-  "2": {
-    id: "2",
-    title: "Machine Learning in Healthcare: Opportunities and Challenges",
-    authors: ["Chen, L.", "Rodriguez, M."],
-    journal: "Nature Medicine",
-    year: 2023,
-    doi: "10.1038/nm.2023.456",
-    status: "PENDING" as ArticleStatus,
-    abstract: "We present a comprehensive analysis of machine learning applications in healthcare settings.",
-  },
-  "3": {
-    id: "3",
-    title: "Ethical Considerations in AI-Driven Clinical Decision Support Systems",
-    authors: ["Kumar, R.", "Thompson, E.", "Lee, S.", "Davis, K."],
-    journal: "The Lancet Digital Health",
-    year: 2024,
-    doi: "10.1016/s2589-7500(24)00012-3",
-    status: "INCLUDED" as ArticleStatus,
-    abstract: "This paper explores the ethical implications of deploying AI-driven clinical decision support systems.",
-  },
-  "4": {
-    id: "4",
-    title: "Predictive Analytics for Patient Readmission: A Meta-Analysis",
-    authors: ["Garcia, M.", "Anderson, P."],
-    journal: "JAMA Network Open",
-    year: 2023,
-    doi: "10.1001/jamanetworkopen.2023.789",
-    status: "EXCLUDED" as ArticleStatus,
-    abstract: "We conducted a meta-analysis of 85 studies examining the effectiveness of predictive analytics models.",
-  },
-  "5": {
-    id: "5",
-    title: "Natural Language Processing in Electronic Health Records: Current State and Future Directions",
-    authors: ["Wang, H.", "Brown, T.", "Miller, J."],
-    journal: "Journal of Biomedical Informatics",
-    year: 2024,
-    doi: "10.1016/j.jbi.2024.104321",
-    status: "PENDING" as ArticleStatus,
-    abstract: "This review article synthesizes recent advances in natural language processing techniques.",
-  },
-  "6": {
-    id: "6",
-    title: "AI-Powered Drug Discovery: Accelerating Pharmaceutical Development",
-    authors: ["Patel, N.", "Kim, Y.", "O'Brien, M."],
-    journal: "Drug Discovery Today",
-    year: 2023,
-    doi: "10.1016/j.drudis.2023.103567",
-    status: "INCLUDED" as ArticleStatus,
-    abstract: "We examine how artificial intelligence is revolutionizing the drug discovery pipeline.",
-  },
-};
+import { getArticle } from "../api/client";
 
 export default function EditArticlePage() {
   const navigate = useNavigate();
@@ -85,22 +22,23 @@ export default function EditArticlePage() {
     abstract: "",
   });
   useEffect(() => {
-    fetch(`http://localhost:8080/api/surveys/articles/${articleId}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setArticle(data);
+    if (!articleId) return;
 
-          setFormData({
-            title: data.title,
-            authors: data.authors.join(", "),
-            journal: data.journal,
-            year: data.year,
-            doi: data.doi,
-            status: data.status,
-            abstract: data.abstract || "",
-          });
-        })
-        .catch((err) => console.error(err));
+    getArticle(articleId)
+      .then((data) => {
+        setArticle(data);
+
+        setFormData({
+          title: data.title,
+          authors: data.authors.join(", "),
+          journal: data.journal,
+          year: data.year,
+          doi: data.doi,
+          status: data.status,
+          abstract: data.abstract || "",
+        });
+      })
+      .catch((err) => console.error(err));
   }, [articleId]);
 
   const handleSubmit = (e: React.FormEvent) => {

@@ -12,6 +12,10 @@ public class LlmAnnotationService {
         return Map.of();
     }
 
+    public Map<String, Object> ask(String context, Prompt prompt) {
+        return Map.of("answer", false, "explanation", "");
+    }
+
     public void saveAnnotationResult(Article article, Prompt prompt, Map<String, Object> result) {
     }
 }

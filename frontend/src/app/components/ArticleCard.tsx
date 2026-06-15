@@ -1,4 +1,4 @@
-import { Eye, Edit, Trash2, ExternalLink } from "lucide-react";
+import { Eye, Edit, Trash2, ExternalLink, UserRound } from "lucide-react";
 import { motion } from "motion/react";
 
 export type ArticleStatus = "INCLUDED" | "EXCLUDED" | "PENDING";
@@ -12,6 +12,12 @@ export interface Article {
   doi: string;
   status: ArticleStatus;
   abstract?: string;
+  inclusionSummary?: string;
+  addedBy?: {
+    id: string;
+    name: string;
+    role: "Owner" | "Reviewer";
+  };
 }
 
 interface ArticleCardProps {
@@ -19,6 +25,8 @@ interface ArticleCardProps {
   onView: (id: string) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 const statusConfig = {
@@ -39,7 +47,14 @@ const statusConfig = {
   },
 };
 
-export function ArticleCard({ article, onView, onEdit, onDelete }: ArticleCardProps) {
+export function ArticleCard({
+  article,
+  onView,
+  onEdit,
+  onDelete,
+  canEdit = true,
+  canDelete = true,
+}: ArticleCardProps) {
   const status = statusConfig[article.status];
 
   return (
@@ -90,6 +105,24 @@ export function ArticleCard({ article, onView, onEdit, onDelete }: ArticleCardPr
           </a>
         )}
 
+        {article.inclusionSummary && (
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 mb-4">
+            <p className="text-xs font-medium text-green-800 mb-1">
+              Inclusion summary
+            </p>
+            <p className="text-xs text-gray-700 line-clamp-3">
+              {article.inclusionSummary}
+            </p>
+          </div>
+        )}
+
+        {article.addedBy && (
+          <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
+            <UserRound className="w-3.5 h-3.5" />
+            <span>Added by {article.addedBy.name}</span>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
           <button
@@ -99,19 +132,24 @@ export function ArticleCard({ article, onView, onEdit, onDelete }: ArticleCardPr
             <Eye className="w-4 h-4" />
             View
           </button>
-          <button
-            onClick={() => onEdit(article.id)}
-            className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-          >
-            <Edit className="w-4 h-4" />
-            Edit
-          </button>
-          <button
-            onClick={() => onDelete(article.id)}
-            className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => onEdit(article.id)}
+              className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              <Edit className="w-4 h-4" />
+              Edit
+            </button>
+          )}
+          {canDelete && (
+            <button
+              onClick={() => onDelete(article.id)}
+              className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
+              title="Remove article"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </motion.div>

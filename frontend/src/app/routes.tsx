@@ -2,26 +2,41 @@ import { createBrowserRouter } from "react-router";
 import SurveysListPage from "./pages/SurveysListPage";
 import SurveyDetailsPage from "./pages/SurveyDetailsPage";
 import EditArticlePage from "./pages/EditArticlePage";
+import AuthPage from "./pages/AuthPage";
+import { RequireAuth } from "./auth/RequireAuth";
 
 export const router = createBrowserRouter([
   {
-    path: "/",
-    Component: SurveysListPage,
+    path: "/login",
+    element: <AuthPage mode="login" />,
   },
   {
-    path: "/survey",
-    Component: SurveysListPage,
+    path: "/register",
+    element: <AuthPage mode="register" />,
   },
   {
-    path: "/survey/:surveyId",
-    Component: SurveyDetailsPage,
-  },
-  {
-    path: "/survey/:surveyId/articles",
-    Component: SurveyDetailsPage,
-  },
-  {
-    path: "/survey/:surveyId/articles/:articleId/edit",
-    Component: EditArticlePage,
+    element: <RequireAuth />,
+    children: [
+      {
+        path: "/",
+        Component: SurveysListPage,
+      },
+      {
+        path: "/survey",
+        Component: SurveysListPage,
+      },
+      {
+        path: "/survey/:surveyId",
+        Component: SurveyDetailsPage,
+      },
+      {
+        path: "/survey/:surveyId/articles",
+        Component: SurveyDetailsPage,
+      },
+      {
+        path: "/survey/:surveyId/articles/:articleId/edit",
+        Component: EditArticlePage,
+      },
+    ],
   },
 ]);
