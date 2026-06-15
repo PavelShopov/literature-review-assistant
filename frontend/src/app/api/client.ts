@@ -15,6 +15,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080
 export const isMockApi = import.meta.env.VITE_USE_MOCK_API !== "false";
 const MOCK_SURVEYS_KEY = "mock:surveys";
 const MOCK_USERS_KEY = "mock:users";
+const AUTH_STORAGE_KEY = "auth:session";
 
 export type AuthUser = {
   id: string | number;
@@ -28,6 +29,28 @@ export type AuthResponse = {
 };
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+const readAuthToken = (): string | null => {
+  if (typeof window === "undefined") return null;
+
+  const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+  if (!stored) return null;
+
+  try {
+    const session = JSON.parse(stored) as { token?: string };
+    return session.token ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read PDF file"));
+    reader.readAsDataURL(file);
+  });
 
 const mockDelay = async <T>(value: T): Promise<T> => {
   await new Promise((resolve) => setTimeout(resolve, 250));
@@ -51,10 +74,27 @@ const setMockSurveys = (surveys: Survey[]) => {
 };
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, options);
+  const headers = new Headers(options?.headers ?? {});
+  const token = readAuthToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+  });
 
   if (!response.ok) {
-    const errorBody = await response.json().catch(() => undefined);
+    const contentType = response.headers.get("content-type") ?? "";
+    const errorBody = contentType.includes("application/json")
+      ? await response.json().catch(() => undefined)
+      : await response.text().catch(() => undefined);
+
+    if (typeof errorBody === "string" && errorBody.trim()) {
+      throw new Error(errorBody);
+    }
+
     throw new Error(errorBody?.message ?? errorBody?.detail ?? `API request failed: ${response.status}`);
   }
 
@@ -63,6 +103,34 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   return response.json();
+}
+
+async function requestText(path: string, options?: RequestInit): Promise<string> {
+  const headers = new Headers(options?.headers ?? {});
+  const token = readAuthToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+  });
+
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") ?? "";
+    const errorBody = contentType.includes("application/json")
+      ? await response.json().catch(() => undefined)
+      : await response.text().catch(() => undefined);
+
+    if (typeof errorBody === "string" && errorBody.trim()) {
+      throw new Error(errorBody);
+    }
+
+    throw new Error(errorBody?.message ?? errorBody?.detail ?? `API request failed: ${response.status}`);
+  }
+
+  return response.text();
 }
 
 const getMockUsers = (): Array<AuthUser & { password: string }> => {
@@ -211,6 +279,119 @@ export function getArticle(articleId: string): Promise<Article> {
   }
 
   return request<Article>(`/api/surveys/articles/${articleId}`);
+}
+
+export function updateSurveyArticle(
+  surveyId: string,
+  articleId: string,
+  input: {
+    title: string;
+    authors: string[];
+    journal: string;
+    year: number;
+    doi: string;
+    status: Article["status"];
+    abstract: string;
+    inclusionSummary?: string;
+  },
+): Promise<Article> {
+  if (isMockApi) {
+    const article = mockArticles.find((item) => item.id === articleId) ?? mockArticles[0];
+    return mockDelay({
+      ...article,
+      ...input,
+      id: articleId,
+      abstract: input.abstract,
+    });
+  }
+
+  return request<Article>(`/api/surveys/${surveyId}/articles/${articleId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title: input.title,
+      authors: input.authors,
+      journal: input.journal,
+      year: input.year,
+      doi: input.doi,
+      status: input.status,
+      abstractText: input.abstract,
+      inclusionSummary: input.inclusionSummary ?? "",
+    }),
+  });
+}
+
+export function getSurveyArticles(surveyId: string): Promise<Article[]> {
+  if (isMockApi) return mockDelay(mockArticles);
+  return request<Article[]>(`/api/surveys/${surveyId}/articles`);
+}
+
+export function askSurveyQuestion(surveyId: string, question: string): Promise<string> {
+  if (isMockApi) {
+    return mockDelay(
+      `Mock answer for: ${question}\n\nThis is returned by the mock frontend mode. Start the backend and use backend mode to query Ollama.`,
+    );
+  }
+
+  return requestText(`/api/surveys/${surveyId}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+}
+
+export async function importSurveyArticle(
+  surveyId: string,
+  input: {
+    type: "url" | "bibtex" | "pdf";
+    data: string | File;
+    addedBy: NonNullable<Article["addedBy"]>;
+  },
+): Promise<Article> {
+  if (isMockApi) {
+    const newArticle: Article = {
+      id: Date.now().toString(),
+      title: `Imported Article via ${input.type.toUpperCase()}`,
+      authors: ["Author, A.", "Researcher, B."],
+      journal: "Imported Journal",
+      year: new Date().getFullYear(),
+      doi: "10.1000/imported." + Date.now(),
+      status: "PENDING",
+      abstract: "This article was imported and needs to be reviewed.",
+      addedBy: input.addedBy,
+    };
+
+    return mockDelay(newArticle);
+  }
+
+  if (input.type === "pdf" && input.data instanceof File) {
+    const payload = {
+      type: "pdf" as const,
+      data: await fileToDataUrl(input.data),
+      fileName: input.data.name,
+      addedBy: input.addedBy,
+    };
+
+    return request<Article>(`/api/surveys/${surveyId}/articles/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  return request<Article>(`/api/surveys/${surveyId}/articles/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteSurveyArticle(surveyId: string, articleId: string): Promise<void> {
+  if (isMockApi) return mockDelay(undefined);
+
+  return request<void>(`/api/surveys/${surveyId}/articles/${articleId}`, {
+    method: "DELETE",
+  });
 }
 
 export function getContributors(surveyId: string): Promise<Contributor[]> {

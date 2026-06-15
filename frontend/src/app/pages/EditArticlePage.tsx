@@ -4,7 +4,7 @@ import { ArrowLeft, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
 import type { ArticleStatus } from "../components/ArticleCard";
-import { getArticle } from "../api/client";
+import { getArticle, updateSurveyArticle } from "../api/client";
 
 export default function EditArticlePage() {
   const navigate = useNavigate();
@@ -20,6 +20,7 @@ export default function EditArticlePage() {
     doi: "",
     status: "PENDING" as ArticleStatus,
     abstract: "",
+    inclusionSummary: "",
   });
   useEffect(() => {
     if (!articleId) return;
@@ -36,6 +37,7 @@ export default function EditArticlePage() {
           doi: data.doi,
           status: data.status,
           abstract: data.abstract || "",
+          inclusionSummary: data.inclusionSummary || "",
         });
       })
       .catch((err) => console.error(err));
@@ -43,8 +45,26 @@ export default function EditArticlePage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success("Article updated successfully!");
-    navigate(`/survey/${surveyId}`);
+    if (!articleId) return;
+
+    updateSurveyArticle(surveyId, articleId, {
+      title: formData.title,
+      authors: formData.authors
+        .split(",")
+        .map((author) => author.trim())
+        .filter(Boolean),
+      journal: formData.journal,
+      year: formData.year,
+      doi: formData.doi,
+      status: formData.status,
+      abstract: formData.abstract,
+      inclusionSummary: formData.inclusionSummary,
+    })
+      .then(() => {
+        toast.success("Article updated successfully!");
+        navigate(`/survey/${surveyId}`);
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Article update failed"));
   };
 
   const handleCancel = () => {
@@ -230,6 +250,20 @@ export default function EditArticlePage() {
                 value={formData.abstract}
                 onChange={(e) => setFormData({ ...formData, abstract: e.target.value })}
                 rows={6}
+                className="w-full px-4 py-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              />
+            </div>
+
+            {/* Inclusion Summary */}
+            <div>
+              <label htmlFor="inclusionSummary" className="block text-sm font-medium text-gray-900 mb-2">
+                Inclusion Summary
+              </label>
+              <textarea
+                id="inclusionSummary"
+                value={formData.inclusionSummary}
+                onChange={(e) => setFormData({ ...formData, inclusionSummary: e.target.value })}
+                rows={4}
                 className="w-full px-4 py-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               />
             </div>

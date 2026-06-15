@@ -13,9 +13,24 @@ public class Article {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long articleId;
+    @Column(nullable = false, unique = true)
+    private String externalId;
+
+    private String surveyExternalId;
+
     private String url;
     private String title;
     private String doi;
+    private String journal;
+    private Integer publicationYear;
+    private String status;
+
+    @Column(columnDefinition = "TEXT")
+    private String inclusionSummary;
+
+    private String addedById;
+    private String addedByName;
+    private String addedByRole;
 
     @Column(columnDefinition = "TEXT")
     private String articleAbstract;
@@ -28,20 +43,20 @@ public class Article {
     )
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
-    private List<Author> authors;
+    private List<Author> authors = new ArrayList<>();
 
     @ManyToMany
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
-    private List<Survey> surveys;
+    private List<Survey> surveys = new ArrayList<>();
 
     @OneToMany(mappedBy = "article", cascade = CascadeType.ALL)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
-    private List<Document> documents;
+    private List<Document> documents = new ArrayList<>();
 
     @OneToMany(mappedBy = "article", cascade = CascadeType.ALL)
     @ToString.Exclude
     @EqualsAndHashCode.Exclude
-    private List<AnnotationResult> annotationResults;
+    private List<AnnotationResult> annotationResults = new ArrayList<>();
 }

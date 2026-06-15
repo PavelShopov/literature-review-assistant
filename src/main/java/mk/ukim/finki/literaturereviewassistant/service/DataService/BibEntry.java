@@ -10,6 +10,8 @@ public class BibEntry {
     private String title;
     private String url;
     private String abstractText;
+    private String journal;
+    private String year;
     private List<String> authorNames = new ArrayList<>();
 
     public String getAbstract() {

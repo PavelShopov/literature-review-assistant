@@ -4,7 +4,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "build": "vite build",
+    "build": "vite build --configLoader runner",
     "dev": "vite --mode mock --host 127.0.0.1",
     "dev:mock": "vite --mode mock --host 127.0.0.1",
     "dev:backend": "vite --mode backend --host 127.0.0.1"

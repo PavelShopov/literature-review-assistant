@@ -1,5 +1,6 @@
 // import { useState } from "react";
 import { useState, useEffect } from "react";
+import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
 import { 
   FileText, 
@@ -23,45 +24,20 @@ import { ArticleCard, type Article, type ArticleStatus } from "../components/Art
 import { ImportSection } from "../components/ImportSection";
 import { EmptyState } from "../components/EmptyState";
 import { ContributorsPanel, type Contributor } from "../components/ContributorsPanel";
+import { useAuth } from "../auth/AuthContext";
 import {
   addContributor,
+  askSurveyQuestion,
+  deleteSurveyArticle,
   getContributors,
   getSurvey,
+  getSurveyArticles,
+  importSurveyArticle,
   mockArticles,
   removeContributor,
+  updateSurveyArticle,
   type SurveyDetails,
 } from "../api/client";
-
-// Mock references data
-const mockReferences: Reference[] = [
-  {
-    id: "1",
-    title: "Deep Learning Applications in Medical Image Analysis: A Systematic Review",
-    authors: ["Smith, J.", "Johnson, A.", "Williams, B."],
-    journal: "Journal of Medical Imaging",
-    year: 2024,
-    snippet: "Our findings demonstrate that deep learning models achieved 94% accuracy in detecting lung nodules, significantly outperforming traditional computer-aided detection systems.",
-    relevanceScore: 95,
-  },
-  {
-    id: "3",
-    title: "Ethical Considerations in AI-Driven Clinical Decision Support Systems",
-    authors: ["Kumar, R.", "Thompson, E.", "Lee, S.", "Davis, K."],
-    journal: "The Lancet Digital Health",
-    year: 2024,
-    snippet: "The deployment of AI in clinical settings raises critical concerns about algorithmic bias and patient autonomy.",
-    relevanceScore: 88,
-  },
-  {
-    id: "2",
-    title: "Machine Learning in Healthcare: Opportunities and Challenges",
-    authors: ["Chen, L.", "Rodriguez, M."],
-    journal: "Nature Medicine",
-    year: 2023,
-    snippet: "Machine learning algorithms have transformed diagnostic processes, reducing average diagnosis time by 40%.",
-    relevanceScore: 82,
-  },
-];
 
 type TabType = "dashboard" | "articles" | "ask-ai" | "reviewers";
 type ArticleFilter = "all" | "screened" | "pending";
@@ -78,11 +54,100 @@ const normalizeReviewers = (items: Contributor[]): Contributor[] =>
     role: item.role === "Owner" ? "Owner" : "Reviewer",
   }));
 
+const stopWords = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "into",
+  "that",
+  "this",
+  "what",
+  "when",
+  "where",
+  "which",
+  "how",
+  "why",
+  "about",
+  "your",
+  "survey",
+  "article",
+  "articles",
+  "study",
+  "studies",
+  "question",
+]);
+
+const tokenize = (value: string) => value.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+
+const scoreArticle = (article: Article, question: string): number => {
+  const queryTerms = tokenize(question).filter((term) => term.length > 2 && !stopWords.has(term));
+  const haystack = [
+    article.title,
+    article.authors.join(" "),
+    article.journal,
+    article.abstract ?? "",
+    article.inclusionSummary ?? "",
+    article.doi,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (queryTerms.length === 0) {
+    return article.status === "INCLUDED" ? 6 : article.status === "PENDING" ? 4 : 2;
+  }
+
+  let score = 0;
+  for (const term of queryTerms) {
+    if (haystack.includes(term)) {
+      score += 3;
+    }
+  }
+
+  if (article.title.toLowerCase().includes(queryTerms[0] ?? "")) {
+    score += 2;
+  }
+
+  if (article.status === "INCLUDED") {
+    score += 2;
+  } else if (article.status === "PENDING") {
+    score += 1;
+  }
+
+  return score;
+};
+
+const buildTopReferences = (articles: Article[], question: string): Reference[] => {
+  const ranked = [...articles]
+    .map((article) => ({
+      article,
+      score: scoreArticle(article, question),
+    }))
+    .sort((left, right) => right.score - left.score || right.article.year - left.article.year)
+    .slice(0, 5);
+
+  const maxScore = Math.max(1, ...ranked.map((item) => item.score));
+
+  return ranked.map(({ article, score }) => ({
+    id: article.id,
+    title: article.title,
+    authors: article.authors,
+    journal: article.journal,
+    year: article.year,
+    snippet:
+      article.inclusionSummary?.trim() ||
+      article.abstract?.trim() ||
+      "No abstract available for this article.",
+    relevanceScore: Math.max(20, Math.round((score / maxScore) * 100)),
+  }));
+};
+
 export default function SurveyDetailsPage() {
   const navigate = useNavigate();
   const { surveyId = "survey-001" } = useParams();
+  const { user: authUser } = useAuth();
   const roleParam = new URLSearchParams(window.location.search).get("role");
-  const isReviewerView = roleParam === "reviewer";
   
   const [activeTab, setActiveTab] = useState<TabType>("dashboard");
   const [articleFilter, setArticleFilter] = useState<ArticleFilter>("all");
@@ -114,42 +179,80 @@ export default function SurveyDetailsPage() {
   const [survey, setSurvey] = useState<SurveyDetails | null>(null);
   const [surveyError, setSurveyError] = useState<string | null>(null);
 
+  const defaultOwner = {
+    id: "owner",
+    name: "Survey Owner",
+    email: "owner@example.com",
+    role: "Owner" as const,
+    addedDate: new Date().toISOString(),
+  };
+  const defaultReviewer = {
+    id: "reviewer-1",
+    name: "Ana Petrova",
+    email: "ana.petrova@example.com",
+    role: "Reviewer" as const,
+    addedDate: new Date().toISOString(),
+  };
+
+  const currentUser = authUser ?? (isReviewerFallback(roleParam) ? defaultReviewer : defaultOwner);
+  const currentRole: "Owner" | "Reviewer" = authUser
+    ? contributors.some(
+        (contributor) =>
+          contributor.email.toLowerCase() === authUser.email.toLowerCase() && contributor.role === "Owner",
+      )
+      ? "Owner"
+      : "Reviewer"
+    : isReviewerFallback(roleParam)
+      ? "Reviewer"
+      : "Owner";
+  const isOwnerView = currentRole === "Owner";
+  const totalArticles = articles.length;
+  const screenedArticles = articles.filter(
+    (article) => article.status === "INCLUDED" || article.status === "EXCLUDED",
+  ).length;
+  const pendingArticles = articles.filter((article) => article.status === "PENDING").length;
+  const topReferences = useMemo(
+    () => buildTopReferences(articles, currentQuestion ?? ""),
+    [articles, currentQuestion],
+  );
+
+  async function loadSurveyData() {
+    const storageKey = `survey:${surveyId}:contributors`;
+
+    try {
+      const [surveyData, surveyArticles, surveyContributors] = await Promise.all([
+        getSurvey(surveyId),
+        getSurveyArticles(surveyId).catch(() => []),
+        getContributors(surveyId).catch(() => []),
+      ]);
+
+      setSurvey(surveyData);
+      setArticles(surveyArticles);
+
+      const nextContributors =
+        surveyContributors.length > 0 ? normalizeReviewers(surveyContributors) : [defaultOwner];
+
+      setContributors(nextContributors);
+      localStorage.setItem(storageKey, JSON.stringify(nextContributors));
+      setSurveyError(null);
+    } catch (err) {
+      console.error("Survey data fetch error:", err);
+      setSurveyError("This survey could not be loaded. Make sure the backend is running.");
+    }
+  }
+
   useEffect(() => {
     setSurvey(null);
+    setArticles([]);
+    setContributors([]);
     setSurveyError(null);
+    void loadSurveyData();
 
-    getSurvey(surveyId)
-      .then(setSurvey)
-      .catch((err) => {
-        console.error("Survey details fetch error:", err);
-        setSurveyError("This survey could not be loaded. Check that the frontend is running in mock mode.");
-      });
-  }, [surveyId]);
+    const timer = window.setInterval(() => {
+      void loadSurveyData();
+    }, 5000);
 
-  useEffect(() => {
-    const storageKey = `survey:${surveyId}:contributors`;
-    const defaultContributors: Contributor[] = [
-      {
-        id: "owner",
-        name: "Survey Owner",
-        email: "owner@example.com",
-        role: "Owner",
-        addedDate: new Date().toISOString(),
-      },
-    ];
-
-    const loadLocalContributors = () => {
-      const stored = localStorage.getItem(storageKey);
-      setContributors(stored ? normalizeReviewers(JSON.parse(stored)) : defaultContributors);
-    };
-
-    getContributors(surveyId)
-      .then((data: Contributor[]) => {
-        const nextContributors = data.length > 0 ? normalizeReviewers(data) : defaultContributors;
-        setContributors(nextContributors);
-        localStorage.setItem(storageKey, JSON.stringify(nextContributors));
-      })
-      .catch(loadLocalContributors);
+    return () => window.clearInterval(timer);
   }, [surveyId]);
 
   useEffect(() => {
@@ -167,23 +270,6 @@ export default function SurveyDetailsPage() {
     setReferenceDecisions(nextDecisions);
     localStorage.setItem(`survey:${surveyId}:reference-decisions`, JSON.stringify(nextDecisions));
   };
-
-  const ownerUser = contributors.find((contributor) => contributor.role === "Owner") ?? {
-    id: "owner",
-    name: "Survey Owner",
-    email: "owner@example.com",
-    role: "Owner" as const,
-    addedDate: new Date().toISOString(),
-  };
-  const reviewerUser = contributors.find((contributor) => contributor.role === "Reviewer") ?? {
-    id: "reviewer-1",
-    name: "Ana Petrova",
-    email: "ana.petrova@example.com",
-    role: "Reviewer" as const,
-    addedDate: new Date().toISOString(),
-  };
-  const currentUser = isReviewerView ? reviewerUser : ownerUser;
-  const isOwnerView = currentUser.role === "Owner";
 
   if (surveyError) {
     return (
@@ -211,28 +297,25 @@ export default function SurveyDetailsPage() {
     setIsLoading(true);
     setShowResults(false);
 
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    const mockAnswer = `Based on the analysis of your uploaded research articles, AI technologies have demonstrated significant effectiveness in healthcare settings. 
-
-Key findings include:
-
-1. **Diagnostic Accuracy**: Deep learning models have achieved 94% accuracy in medical image analysis, particularly excelling in early detection of lung nodules and other abnormalities.
-
-2. **Efficiency Gains**: Machine learning algorithms have reduced average diagnosis time by 40% while maintaining high accuracy rates.
-
-3. **Drug Discovery**: AI-powered approaches have dramatically accelerated pharmaceutical development, reducing timelines from 10-15 years to 3-5 years.
-
-4. **Ethical Considerations**: Implementation must address critical concerns including algorithmic bias, patient autonomy, and the need for human oversight.
-
-5. **Clinical Integration**: NLP technologies have enabled automated extraction of clinical information, achieving 92% accuracy in clinical entity recognition.`;
-
-    setCurrentAnswer(mockAnswer);
-    setIsLoading(false);
-    setShowResults(true);
+    askSurveyQuestion(surveyId, question)
+      .then((answer) => {
+        setCurrentAnswer(answer);
+        setShowResults(true);
+      })
+      .catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Ask AI failed");
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   };
 
   const handleAddContributor = (contributorData: Pick<Contributor, "name" | "email">) => {
+    if (!isOwnerView) {
+      toast.error("Only the survey owner can add reviewers");
+      return;
+    }
+
     if (!contributorData.name || !contributorData.email) {
       toast.error("Add a reviewer name and email");
       return;
@@ -257,16 +340,23 @@ Key findings include:
 
     persistContributors(nextContributors);
     addContributor(surveyId, newContributor).catch(() => undefined);
+    void loadSurveyData();
     toast.success("Reviewer added to this survey");
   };
 
   const handleRemoveContributor = (contributorId: string) => {
+    if (!isOwnerView) {
+      toast.error("Only the survey owner can remove reviewers");
+      return;
+    }
+
     const contributor = contributors.find((item) => item.id === contributorId);
     if (contributor?.role === "Owner") return;
 
     const nextContributors = contributors.filter((item) => item.id !== contributorId);
     persistContributors(nextContributors);
     removeContributor(surveyId, contributorId).catch(() => undefined);
+    void loadSurveyData();
     toast.success("Reviewer removed");
   };
 
@@ -275,8 +365,11 @@ Key findings include:
     decision: ReferenceDecision["decision"],
     summary: string,
   ) => {
-    const reference = mockReferences.find((item) => item.id === referenceId);
-    if (!reference) return;
+    const article = articles.find((item) => item.id === referenceId);
+    if (!article) {
+      toast.error("Reference is no longer available");
+      return;
+    }
 
     const nextDecisions = {
       ...referenceDecisions,
@@ -290,42 +383,25 @@ Key findings include:
 
     persistReferenceDecisions(nextDecisions);
 
-    if (decision === "added") {
-      setArticles((currentArticles) => {
-        const articleExists = currentArticles.some((article) => article.id === referenceId);
-        if (articleExists) {
-          return currentArticles.map((article) =>
-            article.id === referenceId
-              ? { ...article, status: "INCLUDED", inclusionSummary: summary }
-              : article,
-          );
-        }
-
-        return [
-          {
-            id: reference.id,
-            title: reference.title,
-            authors: reference.authors,
-            journal: reference.journal,
-            year: reference.year,
-            doi: "",
-            status: "INCLUDED",
-            abstract: reference.snippet,
-            inclusionSummary: summary,
-            addedBy: {
-              id: currentUser.id,
-              name: currentUser.name,
-              role: currentUser.role,
-            },
-          },
-          ...currentArticles,
-        ];
-      });
-      toast.success("Article added to this survey");
-      return;
-    }
-
-    toast.success("Article marked as not added");
+    const nextStatus: ArticleStatus = decision === "added" ? "INCLUDED" : "EXCLUDED";
+    updateSurveyArticle(surveyId, referenceId, {
+      title: article.title,
+      authors: article.authors,
+      journal: article.journal,
+      year: article.year,
+      doi: article.doi,
+      status: nextStatus,
+      abstract: article.abstract ?? "",
+      inclusionSummary: summary,
+    })
+      .then((updatedArticle) => {
+        setArticles((currentArticles) =>
+          currentArticles.map((item) => (item.id === updatedArticle.id ? updatedArticle : item)),
+        );
+        void loadSurveyData();
+        toast.success(decision === "added" ? "Article added to this survey" : "Article marked as not added");
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Article update failed"));
   };
 
   const handleAddToNewSurvey = (referenceId: string) => {
@@ -338,24 +414,24 @@ Key findings include:
   };
 
   const handleImport = (type: "url" | "bibtex" | "pdf", data: string | File) => {
-    const newArticle: Article = {
-      id: Date.now().toString(),
-      title: `Imported Article via ${type.toUpperCase()}`,
-      authors: ["Author, A.", "Researcher, B."],
-      journal: "Imported Journal",
-      year: 2024,
-      doi: "10.1000/imported." + Date.now(),
-      status: "PENDING",
-      abstract: "This article was imported and needs to be reviewed.",
-      addedBy: {
-        id: currentUser.id,
-        name: currentUser.name,
-        role: currentUser.role,
-      },
+    const addedBy = {
+      id: currentUser.id,
+      name: currentUser.name,
+      role: currentUser.role,
     };
-    setArticles([newArticle, ...articles]);
-    setIsImportOpen(false);
-    toast.success("Article imported successfully!");
+
+    importSurveyArticle(surveyId, {
+      type,
+      data,
+      addedBy,
+    })
+      .then((newArticle) => {
+        setArticles((currentArticles) => [newArticle, ...currentArticles]);
+        setIsImportOpen(false);
+        void loadSurveyData();
+        toast.success("Article imported successfully!");
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Article import failed"));
   };
 
   const handleView = (id: string) => {
@@ -374,8 +450,13 @@ Key findings include:
       return;
     }
 
-    setArticles(articles.filter((a) => a.id !== id));
-    toast.success("Article deleted");
+    deleteSurveyArticle(surveyId, id)
+      .then(() => {
+        setArticles((currentArticles) => currentArticles.filter((a) => a.id !== id));
+        void loadSurveyData();
+        toast.success("Article deleted");
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Article delete failed"));
   };
 
   const handleUpdateStatus = (id: string, status: ArticleStatus) => {
@@ -424,24 +505,32 @@ Key findings include:
             Created on {new Date(survey.createdDate).toLocaleDateString()}
           </p>
           <div className="mt-4 inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
-            <button
-              type="button"
-              onClick={() => navigate(`/survey/${surveyId}?role=owner`)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                isOwnerView ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Owner
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate(`/survey/${surveyId}?role=reviewer`)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                isReviewerView ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              Reviewer
-            </button>
+            {!authUser && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/survey/${surveyId}?role=owner`)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    currentRole === "Owner"
+                      ? "bg-white text-blue-700 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Owner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/survey/${surveyId}?role=reviewer`)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    currentRole === "Reviewer"
+                      ? "bg-white text-blue-700 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Reviewer
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -516,7 +605,7 @@ Key findings include:
                     <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
                   </div>
                   <p className="text-3xl font-semibold text-gray-900 mb-1">
-                    {survey.totalArticles}
+                    {totalArticles}
                   </p>
                   <p className="text-sm text-gray-600">Total Articles</p>
                   <p className="text-xs text-gray-500 mt-2">
@@ -536,7 +625,7 @@ Key findings include:
                     <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-green-600 group-hover:translate-x-1 transition-all" />
                   </div>
                   <p className="text-3xl font-semibold text-gray-900 mb-1">
-                    {survey.screened}
+                    {screenedArticles}
                   </p>
                   <p className="text-sm text-gray-600">Screened Articles</p>
                   <p className="text-xs text-gray-500 mt-2">
@@ -556,7 +645,7 @@ Key findings include:
                     <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-yellow-600 group-hover:translate-x-1 transition-all" />
                   </div>
                   <p className="text-3xl font-semibold text-gray-900 mb-1">
-                    {survey.pending}
+                    {pendingArticles}
                   </p>
                   <p className="text-sm text-gray-600">Pending Review</p>
                   <p className="text-xs text-gray-500 mt-2">
@@ -691,25 +780,39 @@ Key findings include:
                 <AIAnswer
                   question={currentQuestion}
                   answer={currentAnswer}
-                  sourceCount={mockReferences.length}
+                  sourceCount={topReferences.length}
                   confidence={85}
                 />
-                <ReferencesList
-                  references={mockReferences}
-                  surveyId={surveyId}
-                  decisions={referenceDecisions}
-                  onReviewReference={handleReferenceDecision}
-                  onAddToNewSurvey={handleAddToNewSurvey}
-                />
+                {topReferences.length > 0 ? (
+                  <ReferencesList
+                    references={topReferences}
+                    surveyId={surveyId}
+                    decisions={referenceDecisions}
+                    onReviewReference={handleReferenceDecision}
+                    onAddToNewSurvey={handleAddToNewSurvey}
+                  />
+                ) : (
+                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-2">Top References</h3>
+                    <p className="text-sm text-gray-600">
+                      No survey database references are available yet. Import articles into this survey to
+                      populate this list. The answer above is based on model knowledge only.
+                    </p>
+                  </div>
+                )}
               </>
             )}
 
             {!isLoading && !showResults && (
-              <EmptyAskState articleCount={survey.totalArticles} />
+              <EmptyAskState articleCount={totalArticles} />
             )}
           </div>
         )}
       </div>
     </div>
   );
+}
+
+function isReviewerFallback(roleParam: string | null) {
+  return roleParam === "reviewer";
 }
