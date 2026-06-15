@@ -10,7 +10,6 @@ import static lombok.ToString.*;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Entity
 public class Survey {
 
     @Id
@@ -22,6 +21,8 @@ public class Survey {
     @ElementCollection
     private List<String> keywords;
 
+    @Enumerated(EnumType.STRING)
+    private SurveyStatus status;
 
     @ManyToMany(mappedBy = "surveys")
     @Exclude
