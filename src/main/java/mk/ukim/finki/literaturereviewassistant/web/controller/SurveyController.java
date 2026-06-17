@@ -1,27 +1,15 @@
 package mk.ukim.finki.literaturereviewassistant.web.controller;
 
+import mk.ukim.finki.literaturereviewassistant.model.Article;
+import mk.ukim.finki.literaturereviewassistant.model.ArticleSurvey;
+import mk.ukim.finki.literaturereviewassistant.model.Reviewer;
+import mk.ukim.finki.literaturereviewassistant.model.Survey;
 import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
-import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleDto;
-import mk.ukim.finki.literaturereviewassistant.web.dto.AddedByDto;
-import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleImportRequest;
-import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleUpdateRequest;
-import mk.ukim.finki.literaturereviewassistant.web.dto.ReviewerDto;
-import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDetailsDto;
-import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDto;
-import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyAskRequest;
-import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyRequest;
+import mk.ukim.finki.literaturereviewassistant.web.dto.*;
+import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -88,6 +76,7 @@ public class SurveyController {
                 addedByName == null || addedByName.isBlank() ? "Survey Owner" : addedByName,
                 addedByRole == null || addedByRole.isBlank() ? "Owner" : addedByRole
         );
+        // Your service implementation already returns an ArticleDto!
         return surveyService.importPdfArticle(surveyId, file, addedBy);
     }
 
@@ -126,14 +115,23 @@ public class SurveyController {
         return surveyService.findReviewers(surveyId);
     }
 
+    @GetMapping("/{surveyId}/articles/{articleId}")
+    public ArticleDto getArticleDetails(
+            @PathVariable String surveyId,
+            @PathVariable String articleId) {
+        return surveyService.findArticle(articleId);
+    }
+
     @PostMapping("/{surveyId}/contributors")
     public ReviewerDto addReviewer(
             @PathVariable String surveyId,
             @RequestBody ReviewerDto reviewer,
             @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
+        // Let the service handle the entity conversion and return the DTO directly
         return surveyService.addReviewer(surveyId, reviewer, authorization);
     }
+
 
     @DeleteMapping("/{surveyId}/contributors/{reviewerId}")
     public ResponseEntity<Void> removeReviewer(
@@ -143,5 +141,63 @@ public class SurveyController {
     ) {
         surveyService.removeReviewer(surveyId, reviewerId, authorization);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/reviewers/search")
+    public List<ReviewerDto> searchReviewers(@RequestParam String email) {
+        return surveyService.searchReviewersByEmail(email);
+    }
+
+    private SurveyDetailsDto toSurveyDetailsDto(Survey survey) {
+        // 1. Иницијализација на бројачи за статистика на артиклите
+        int totalArticles = 0;
+        int screened = 0;
+        int pending = 0;
+
+        if (survey.getArticleLinks() != null) {
+            totalArticles = survey.getArticleLinks().size();
+            for (ArticleSurvey link : survey.getArticleLinks()) {
+                // Ако статусот е PENDING, го броиме како pending, во спротивно е поминат (screened)
+                if (link.getStatus() != null && "PENDING".equalsIgnoreCase(link.getStatus().toString())) {
+                    pending++;
+                } else {
+                    screened++;
+                }
+            }
+        }
+
+        // 2. Издвојување на сопственикот (Owner) од рецензентите
+        UserResponse ownerDto = null;
+        if (survey.getReviewers() != null) {
+            for (Reviewer r : survey.getReviewers()) {
+                if ("Owner".equalsIgnoreCase(r.getRole())) {
+                    ownerDto = new UserResponse(
+                            r.getReviewerId(),
+                            r.getName(),
+                            r.getEmail()
+                    );
+                    break;
+                }
+            }
+        }
+
+        // Fallback ако случајно нема дефинирано Owner во базата за оваа анкета
+        if (ownerDto == null) {
+            ownerDto = new UserResponse(-1L, "Survey Owner", "owner@finki.ukim.mk");
+        }
+
+        // 3. Сега ги праќаме точно 10-те аргументи во редоследот кој го бара твојот рекорд
+        return new SurveyDetailsDto(
+                survey.getExternalId(),                                                      // 1. id (String)
+                survey.getTitle(),                                                           // 2. name (String)
+                survey.getDescription(),                                                     // 3. description (String)
+                survey.getResearchQuestion(),                                                 // 4. researchQuestion (String)
+                survey.getCreatedDate() != null ? survey.getCreatedDate().toString() : null, // 5. createdDate (String)
+                survey.getStatus(),                                                          // 6. status (String)
+                totalArticles,                                                               // 7. totalArticles (int)
+                screened,                                                                    // 8. screened (int)
+                pending,                                                                     // 9. pending (int)
+                ownerDto                                                                     // 10. owner (UserResponse)
+        );
     }
 }

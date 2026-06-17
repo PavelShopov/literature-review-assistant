@@ -305,6 +305,20 @@ public class SurveyServiceImpl implements SurveyService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<ReviewerDto> searchReviewersByEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return List.of();
+        }
+
+        // Fetch matching reviewer entities from the database
+        return reviewerRepository.findByEmailContainingIgnoreCase(email.trim())
+                .stream()
+                .map(this::toReviewerDto) // Map entity to DTO
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public String askSurvey(String surveyId, SurveyAskRequest request) {
         Survey survey = getSurveyOrThrow(surveyId);
         String question = request == null || request.question() == null ? "" : request.question().trim();
@@ -1026,7 +1040,7 @@ public class SurveyServiceImpl implements SurveyService {
         );
     }
 
-    private ArticleDto toArticleDto(Article article) {
+    public ArticleDto toArticleDto(Article article) {
         return new ArticleDto(
                 article.getExternalId(),
                 article.getTitle(),
@@ -1041,13 +1055,13 @@ public class SurveyServiceImpl implements SurveyService {
         );
     }
 
-    private ReviewerDto toReviewerDto(Reviewer reviewer) {
+    public ReviewerDto toReviewerDto(Reviewer reviewer) {
         return new ReviewerDto(
                 reviewer.getExternalId(),
                 reviewer.getName(),
                 reviewer.getEmail(),
                 reviewer.getRole(),
-                reviewer.getAddedDate() == null ? Instant.now().toString() : reviewer.getAddedDate().toString()
+                reviewer.getAddedDate() != null ? reviewer.getAddedDate().toString() : null
         );
     }
 
@@ -1231,5 +1245,6 @@ public class SurveyServiceImpl implements SurveyService {
     private String safeDate(LocalDate date) {
         return (date == null ? LocalDate.now() : date).toString();
     }
+
 
 }

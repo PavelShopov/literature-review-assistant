@@ -13,4 +13,6 @@ public interface ReviewerRepository extends JpaRepository<Reviewer, Long> {
     Optional<Reviewer> findBySurveysContainingAndExternalId(Survey survey, String externalId);
 
     Optional<Reviewer> findByEmail(String email);
+
+    List<Reviewer> findByEmailContainingIgnoreCase(String email);
 }

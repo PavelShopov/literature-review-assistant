@@ -1,5 +1,7 @@
 package mk.ukim.finki.literaturereviewassistant.service;
 
+import mk.ukim.finki.literaturereviewassistant.model.Article;
+import mk.ukim.finki.literaturereviewassistant.model.Reviewer;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.AddedByDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleImportRequest;
@@ -41,4 +43,10 @@ public interface SurveyService {
     ReviewerDto addReviewer(String surveyId, ReviewerDto reviewer, String authorizationHeader);
 
     void removeReviewer(String surveyId, String reviewerId, String authorizationHeader);
+
+    List<ReviewerDto> searchReviewersByEmail(String email);
+
+    ReviewerDto toReviewerDto(Reviewer reviewer);
+
+    ArticleDto toArticleDto(Article article);
 }
