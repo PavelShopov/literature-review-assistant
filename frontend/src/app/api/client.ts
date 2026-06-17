@@ -172,10 +172,13 @@ export function registerUser(input: { name: string; email: string; password: str
     });
   }
 
-  return request<AuthResponse>("/api/auth/register", {
+  return request<AuthResponse>("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      email: input.email,
+      password: input.password
+    }),
   });
 }
 

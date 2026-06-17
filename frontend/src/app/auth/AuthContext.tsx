@@ -29,28 +29,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState(readStoredSession);
 
   const value = useMemo<AuthContextValue>(
-    () => ({
-      user: session?.user ?? null,
-      token: session?.token ?? null,
-      login: async (input) => {
-        const nextSession = await loginUser(input);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextSession));
-        setSession(nextSession);
-      },
-      register: async (input) => {
-        const nextSession = await registerUser(input);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextSession));
-        setSession(nextSession);
-      },
-      logout: async () => {
-        if (session?.token) {
-          await logoutUser(session.token).catch(() => undefined);
-        }
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-        setSession(null);
-      },
-    }),
-    [session],
+      () => ({
+        user: session?.user ?? null,
+        token: session?.token ?? null,
+        login: async (input) => {
+          const nextSession = await loginUser(input);
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextSession));
+          setSession(nextSession);
+        },
+        // ПОПРАВЕНАТА ФУНКЦИЈА ЗА РЕГИСТРАЦИЈА:
+        register: async (input) => {
+          // 1. Прво ја извршуваме регистрацијата на бекендот
+          await registerUser(input);
+
+          // 2. Штом поминала успешно без грешка, автоматски го најавуваме корисникот
+          const nextSession = await loginUser({
+            email: input.email,
+            password: input.password
+          });
+
+          // 3. Сега веќе имаме токен, го зачувуваме во сесијата
+          localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextSession));
+          setSession(nextSession);
+        },
+        logout: async () => {
+          if (session?.token) {
+            await logoutUser(session.token).catch(() => undefined);
+          }
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          setSession(null);
+        },
+      }),
+      [session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
