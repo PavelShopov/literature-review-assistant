@@ -1,32 +1,39 @@
 package mk.ukim.finki.literaturereviewassistant.web.controller;
 
-import mk.ukim.finki.literaturereviewassistant.model.Article;
-import mk.ukim.finki.literaturereviewassistant.model.ArticleSurvey;
-import mk.ukim.finki.literaturereviewassistant.model.Reviewer;
-import mk.ukim.finki.literaturereviewassistant.model.Survey;
+import mk.ukim.finki.literaturereviewassistant.model.*;
+import mk.ukim.finki.literaturereviewassistant.repository.AppUserRepository;
 import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
 import mk.ukim.finki.literaturereviewassistant.web.dto.*;
 import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/surveys")
 public class SurveyController {
 
     private final SurveyService surveyService;
+    private final AppUserRepository userRepository;
 
-    public SurveyController(SurveyService surveyService) {
+    public SurveyController(SurveyService surveyService, AppUserRepository userRepository) {
         this.surveyService = surveyService;
+        this.userRepository = userRepository;
     }
 
     @GetMapping
-    public List<SurveyDto> getAllSurveys() {
-        return surveyService.findAllSurveys();
+    public List<SurveyDto> getAllSurveys(@RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
+        return surveyService.findAllSurveys(authorizationHeader);
     }
 
     @GetMapping("/{surveyId}")

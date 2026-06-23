@@ -23,6 +23,7 @@ import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyAskRequest;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyRequest;
 import mk.ukim.finki.literaturereviewassistant.web.dto.UserResponse;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpEntity;
@@ -86,8 +87,12 @@ public class SurveyServiceImpl implements SurveyService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<SurveyDto> findAllSurveys() {
-        return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
+    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
+        Optional<AppUser> currentUser = currentUser(authorizationHeader);
+        if(currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)){
+            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
+        }
+        return new ArrayList<>();
     }
 
     @Override
@@ -122,7 +127,6 @@ public class SurveyServiceImpl implements SurveyService {
             survey.setResearchQuestion("Define the main research question for this survey.");
         }
 
-        // 3. Save the survey and bind ownership relations
         Survey saved = surveyRepository.save(survey);
         ensureOwner(saved, authorizationHeader);
 
@@ -298,9 +302,18 @@ public class SurveyServiceImpl implements SurveyService {
     public void removeReviewer(String surveyId, String reviewerId, String authorizationHeader) {
         Survey survey = getSurveyOrThrow(surveyId);
         ensureOwnerAccess(survey, authorizationHeader);
+
         reviewerRepository.findBySurveysContainingAndExternalId(survey, reviewerId)
                 .filter(reviewer -> !"Owner".equals(reviewer.getRole()))
-                .ifPresent(reviewerRepository::delete);
+                .ifPresent(reviewer -> {
+                    if (survey.getReviewers() != null) {
+                        survey.getReviewers().remove(reviewer);
+                    }
+                    if (reviewer.getSurveys() != null) {
+                        reviewer.getSurveys().remove(survey);
+                    }
+                    surveyRepository.save(survey);
+                });
     }
 
     @Override
@@ -965,29 +978,59 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private void ensureOwner(Survey survey, String authorizationHeader) {
-        if (reviewerRepository.findBySurveysContaining(survey).stream().anyMatch(reviewer -> "Owner".equals(reviewer.getRole()))) {
-            return;
-        }
+        // 1. Resolve the currently logged-in user from the token header
+        Optional<AppUser> currentUserOpt = currentUser(authorizationHeader);
 
-        Optional<AppUser> currentUser = currentUser(authorizationHeader);
+        if (currentUserOpt.isPresent()) {
+            AppUser user = currentUserOpt.get();
 
-        // 1. Initialize an empty list of surveys to pass to the constructor
-        List<Survey> associatedSurveys = new java.util.ArrayList<>();
-        associatedSurveys.add(survey);
+            // 2. Look up if this user already exists as a Reviewer anywhere in the database by their email
+            Optional<Reviewer> existingReviewerOpt = reviewerRepository.findByEmail(user.getEmail());
 
-        Reviewer owner = currentUser
-                .map(user -> new Reviewer(
+            if (existingReviewerOpt.isPresent()) {
+                Reviewer existingReviewer = existingReviewerOpt.get();
+
+                // If they are already associated with this survey, do nothing
+                if (existingReviewer.getSurveys().contains(survey)) {
+                    return;
+                }
+
+                // Otherwise, link this new survey to their existing profile
+                existingReviewer.getSurveys().add(survey);
+                reviewerRepository.save(existingReviewer);
+            } else {
+                // 3. User exists in DB as AppUser but NOT as a Reviewer yet. Create their Reviewer profile:
+                List<Survey> associatedSurveys = new java.util.ArrayList<>();
+                associatedSurveys.add(survey);
+
+                Reviewer newOwner = new Reviewer(
                         null,
-                        java.util.UUID.randomUUID().toString(), // Use a random UUID instead of literal "owner" to prevent duplicate key errors
+                        java.util.UUID.randomUUID().toString(),
                         user.getName(),
                         user.getEmail(),
-                        "Owner",
+                        "Owner", // Mark them securely as the Owner
                         Instant.now(),
-                        user,               // Maps to: private AppUser AppUser;
-                        associatedSurveys,  // Maps to: private List<Survey> surveys;
-                        new java.util.ArrayList<>() // Maps to: private List<ReviewHistory> reviewHistories;
-                ))
-                .orElseGet(() -> new Reviewer(
+                        user,
+                        associatedSurveys,
+                        new java.util.ArrayList<>()
+                );
+                reviewerRepository.save(newOwner);
+            }
+        } else {
+            // Fallback: Handle unauthenticated or anonymous requests safely (e.g., during local UI mock setups)
+            Optional<Reviewer> fallbackOwnerOpt = reviewerRepository.findByEmail("owner@example.com");
+
+            if (fallbackOwnerOpt.isPresent()) {
+                Reviewer fallback = fallbackOwnerOpt.get();
+                if (!fallback.getSurveys().contains(survey)) {
+                    fallback.getSurveys().add(survey);
+                    reviewerRepository.save(fallback);
+                }
+            } else {
+                List<Survey> associatedSurveys = new java.util.ArrayList<>();
+                associatedSurveys.add(survey);
+
+                Reviewer fallbackOwner = new Reviewer(
                         null,
                         java.util.UUID.randomUUID().toString(),
                         "Survey Owner",
@@ -997,9 +1040,10 @@ public class SurveyServiceImpl implements SurveyService {
                         null,
                         associatedSurveys,
                         new java.util.ArrayList<>()
-                ));
-
-        reviewerRepository.save(owner);
+                );
+                reviewerRepository.save(fallbackOwner);
+            }
+        }
     }
 
     private SurveyDto toSurveyDto(Survey survey) {

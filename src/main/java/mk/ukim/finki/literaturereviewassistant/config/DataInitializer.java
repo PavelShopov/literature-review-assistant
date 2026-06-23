@@ -1,13 +1,8 @@
 package mk.ukim.finki.literaturereviewassistant.config;
 
-import mk.ukim.finki.literaturereviewassistant.model.Article;
-import mk.ukim.finki.literaturereviewassistant.model.Author;
-import mk.ukim.finki.literaturereviewassistant.model.Reviewer;
-import mk.ukim.finki.literaturereviewassistant.model.Survey;
-import mk.ukim.finki.literaturereviewassistant.repository.ArticleRepository;
-import mk.ukim.finki.literaturereviewassistant.repository.AuthorRepository;
-import mk.ukim.finki.literaturereviewassistant.repository.ReviewerRepository;
-import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
+
+import mk.ukim.finki.literaturereviewassistant.model.*;
+import mk.ukim.finki.literaturereviewassistant.repository.*;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +10,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Component
 public class DataInitializer implements CommandLineRunner {
@@ -23,23 +19,44 @@ public class DataInitializer implements CommandLineRunner {
     private final ArticleRepository articleRepository;
     private final AuthorRepository authorRepository;
     private final ReviewerRepository reviewerRepository;
+    private final AppUserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public DataInitializer(
             SurveyRepository surveyRepository,
             ArticleRepository articleRepository,
             AuthorRepository authorRepository,
-            ReviewerRepository reviewerRepository
+            ReviewerRepository reviewerRepository,
+            AppUserRepository userRepository,
+            PasswordEncoder passwordEncoder
     ) {
         this.surveyRepository = surveyRepository;
         this.articleRepository = articleRepository;
         this.authorRepository = authorRepository;
         this.reviewerRepository = reviewerRepository;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
     public void run(String... args) {
         if (surveyRepository.count() > 0) {
             return;
+        }
+
+        String adminEmail = "admin@finki.ukim.mk";
+
+        if (!userRepository.existsByEmailIgnoreCase(adminEmail)) {
+
+            AppUser admin = new AppUser(
+                    null,
+                    "System Admin",
+                    adminEmail,
+                    passwordEncoder.encode("SecureAdminPassword123!"),
+                    "ADMIN"
+            );
+
+            userRepository.save(admin);
         }
 
         Survey healthcare = createSurvey(

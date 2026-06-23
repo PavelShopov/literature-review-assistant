@@ -11,12 +11,13 @@ import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDetailsDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyRequest;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyAskRequest;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 public interface SurveyService {
-    List<SurveyDto> findAllSurveys();
+    List<SurveyDto> findAllSurveys(String authorizationHeader);
 
     SurveyDetailsDto findSurvey(String surveyId);
 

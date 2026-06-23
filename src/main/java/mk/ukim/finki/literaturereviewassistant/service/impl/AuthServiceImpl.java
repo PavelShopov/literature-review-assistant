@@ -47,7 +47,7 @@ public class AuthServiceImpl implements AuthService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "An account with this email already exists");
         }
 
-        AppUser user = new AppUser(null, request.name().trim(), email, passwordEncoder.encode(request.password()));
+        AppUser user = new AppUser(null, request.name().trim(), email, passwordEncoder.encode(request.password()), "USER");
         userRepository.save(user);
 
         return createAuthResponse(user);
