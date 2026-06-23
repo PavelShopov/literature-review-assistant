@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 
-// Го дефинираме интерфејсот според твојот ArticleDto
 interface ArticleDto {
     externalId: string;
     title: string;
@@ -30,7 +29,6 @@ export default function ArticleDetails() {
         async function fetchArticleDetails() {
             try {
                 setLoading(true);
-                // Го повикуваме бекенд ендпоинтот кој го дефиниравме во Чекор 1
                 const response = await fetch(`http://localhost:8080/api/surveys/${surveyId}/articles/${articleId}`);
 
                 if (!response.ok) {

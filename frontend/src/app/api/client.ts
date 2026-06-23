@@ -3,7 +3,7 @@ import type { Contributor } from "../components/ContributorsPanel";
 import type { Survey } from "../pages/SurveysListPage";
 import {
   mockArticles,
-  mockContributors,
+  // mockContributors,
   mockSurveyDetails,
   mockSurveys,
   type SurveyDetails,
@@ -151,31 +151,32 @@ const setMockUsers = (users: Array<AuthUser & { password: string }>) => {
 };
 
 export function registerUser(input: { name: string; email: string; password: string }): Promise<AuthResponse> {
-  if (isMockApi) {
-    const email = input.email.trim().toLowerCase();
-    const users = getMockUsers();
-    if (users.some((user) => user.email === email)) {
-      return Promise.reject(new Error("An account with this email already exists"));
-    }
+  // if (isMockApi) {
+  //   const email = input.email.trim().toLowerCase();
+  //   const users = getMockUsers();
+  //   if (users.some((user) => user.email === email)) {
+  //     return Promise.reject(new Error("An account with this email already exists"));
+  //   }
+  //
+  //   const user = {
+  //     id: `user-${Date.now()}`,
+  //     name: input.name.trim(),
+  //     email,
+  //     password: input.password,
+  //   };
+  //
+  //   setMockUsers([...users, user]);
+  //   return mockDelay({
+  //     token: `mock-token-${user.id}`,
+  //     user: { id: user.id, name: user.name, email: user.email },
+  //   });
+  // }
 
-    const user = {
-      id: `user-${Date.now()}`,
-      name: input.name.trim(),
-      email,
-      password: input.password,
-    };
-
-    setMockUsers([...users, user]);
-    return mockDelay({
-      token: `mock-token-${user.id}`,
-      user: { id: user.id, name: user.name, email: user.email },
-    });
-  }
-
-  return request<AuthResponse>("/api/auth/login", {
+  return request<AuthResponse>("/api/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      name : input.name,
       email: input.email,
       password: input.password
     }),
@@ -183,18 +184,18 @@ export function registerUser(input: { name: string; email: string; password: str
 }
 
 export function loginUser(input: { email: string; password: string }): Promise<AuthResponse> {
-  if (isMockApi) {
-    const email = input.email.trim().toLowerCase();
-    const user = getMockUsers().find((item) => item.email === email && item.password === input.password);
-    if (!user) {
-      return Promise.reject(new Error("Invalid email or password"));
-    }
-
-    return mockDelay({
-      token: `mock-token-${user.id}`,
-      user: { id: user.id, name: user.name, email: user.email },
-    });
-  }
+  // if (isMockApi) {
+  //   const email = input.email.trim().toLowerCase();
+  //   const user = getMockUsers().find((item) => item.email === email && item.password === input.password);
+  //   if (!user) {
+  //     return Promise.reject(new Error("Invalid email or password"));
+  //   }
+  //
+  //   return mockDelay({
+  //     token: `mock-token-${user.id}`,
+  //     user: { id: user.id, name: user.name, email: user.email },
+  //   });
+  // }
 
   return request<AuthResponse>("/api/auth/login", {
     method: "POST",
@@ -213,7 +214,7 @@ export function logoutUser(token: string): Promise<void> {
 }
 
 export function getSurveys(): Promise<Survey[]> {
-  if (isMockApi) return mockDelay(getMockSurveys());
+  // if (isMockApi) return mockDelay(getMockSurveys());
   return request<Survey[]>("/api/surveys");
 }
 
@@ -246,16 +247,16 @@ export function getSurvey(surveyId: string): Promise<SurveyDetails> {
 }
 
 export function saveSurvey(survey: Survey): Promise<Survey> {
-  if (isMockApi) {
-    const surveys = getMockSurveys();
-    const exists = surveys.some((item) => item.id === survey.id);
-    const nextSurveys = exists
-      ? surveys.map((item) => (item.id === survey.id ? survey : item))
-      : [survey, ...surveys];
-
-    setMockSurveys(nextSurveys);
-    return mockDelay(survey);
-  }
+  // if (isMockApi) {
+  //   const surveys = getMockSurveys();
+  //   const exists = surveys.some((item) => item.id === survey.id);
+  //   const nextSurveys = exists
+  //     ? surveys.map((item) => (item.id === survey.id ? survey : item))
+  //     : [survey, ...surveys];
+  //
+  //   setMockSurveys(nextSurveys);
+  //   return mockDelay(survey);
+  // }
 
   return request<Survey>(`/api/surveys/${survey.id}`, {
     method: "PUT",
@@ -398,18 +399,17 @@ export function deleteSurveyArticle(surveyId: string, articleId: string): Promis
 }
 
 export function getContributors(surveyId: string): Promise<Contributor[]> {
-  if (isMockApi) {
-    const storageKey = `survey:${surveyId}:contributors`;
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
-      const storedContributors = JSON.parse(stored) as Contributor[];
-      const hasReviewer = storedContributors.some((item) => item.role !== "Owner");
-      return mockDelay(hasReviewer ? storedContributors : mockContributors);
-    }
-
-    return mockDelay(mockContributors);
-  }
-
+  // if (isMockApi) {
+  //   const storageKey = `survey:${surveyId}:contributors`;
+  //   const stored = localStorage.getItem(storageKey);
+  //   if (stored) {
+  //     const storedContributors = JSON.parse(stored) as Contributor[];
+  //     const hasReviewer = storedContributors.some((item) => item.role !== "Owner");
+  //     return mockDelay(hasReviewer ? storedContributors : mockContributors);
+  //   }
+  //
+  //   return mockDelay(mockContributors);
+  // }
   return request<Contributor[]>(`/api/surveys/${surveyId}/contributors`);
 }
 
