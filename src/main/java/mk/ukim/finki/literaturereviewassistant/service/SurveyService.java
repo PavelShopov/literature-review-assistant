@@ -21,7 +21,6 @@ public interface SurveyService {
 
     SurveyDetailsDto findSurvey(String surveyId);
 
-    SurveyDetailsDto findSurveysByUser(String user_Id);
 
     SurveyDto saveSurvey(String surveyId, SurveyRequest request, String authorizationHeader);
 
