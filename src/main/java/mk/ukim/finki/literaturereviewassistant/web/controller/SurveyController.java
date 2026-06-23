@@ -35,6 +35,10 @@ public class SurveyController {
     public List<SurveyDto> getAllSurveys(@RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
         return surveyService.findAllSurveys(authorizationHeader);
     }
+    @GetMapping
+    public List<SurveyDto> getAllUsersSurveys(@RequestHeader(value = "Authorization", required = false) String authorizationHeader, String userID) {
+        return surveyService;
+    }
 
     @GetMapping("/{surveyId}")
     public SurveyDetailsDto getSurveyById(@PathVariable String surveyId) {

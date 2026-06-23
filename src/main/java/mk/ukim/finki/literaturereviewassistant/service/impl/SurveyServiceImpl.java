@@ -102,6 +102,11 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     @Override
+    public SurveyDetailsDto findSurveysByUser(String user_Id) {
+        return ;
+    }
+
+    @Override
     @Transactional
     public SurveyDto saveSurvey(String surveyId, SurveyRequest request, String authorizationHeader) {
         // 1. If surveyId is "new" or empty, treat it as a fresh creation and generate a proper UUID
