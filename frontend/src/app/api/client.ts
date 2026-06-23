@@ -219,29 +219,29 @@ export function getSurveys(): Promise<Survey[]> {
 }
 
 export function getSurvey(surveyId: string): Promise<SurveyDetails> {
-  if (isMockApi) {
-    const seededDetails = mockSurveyDetails[surveyId];
-    if (seededDetails) return mockDelay(seededDetails);
-
-    const survey = getMockSurveys().find((item) => item.id === surveyId);
-    if (survey) {
-      return mockDelay({
-        ...survey,
-        researchQuestion: "Define the main research question for this survey.",
-        screened: 0,
-        pending: survey.totalArticles,
-        owner: {
-          name: "Survey Owner",
-          email: "owner@example.com",
-        },
-      });
-    }
-
-    return mockDelay({
-      ...mockSurveyDetails["survey-001"],
-      id: surveyId,
-    });
-  }
+  // if (isMockApi) {
+  //   const seededDetails = mockSurveyDetails[surveyId];
+  //   if (seededDetails) return mockDelay(seededDetails);
+  //
+  //   const survey = getMockSurveys().find((item) => item.id === surveyId);
+  //   if (survey) {
+  //     return mockDelay({
+  //       ...survey,
+  //       researchQuestion: "Define the main research question for this survey.",
+  //       screened: 0,
+  //       pending: survey.totalArticles,
+  //       owner: {
+  //         name: "Survey Owner",
+  //         email: "owner@example.com",
+  //       },
+  //     });
+  //   }
+  //
+  //   return mockDelay({
+  //     ...mockSurveyDetails["survey-001"],
+  //     id: surveyId,
+  //   });
+  // }
 
   return request<SurveyDetails>(`/api/surveys/${surveyId}`);
 }
@@ -266,10 +266,10 @@ export function saveSurvey(survey: Survey): Promise<Survey> {
 }
 
 export function deleteSurvey(surveyId: string): Promise<void> {
-  if (isMockApi) {
-    setMockSurveys(getMockSurveys().filter((item) => item.id !== surveyId));
-    return mockDelay(undefined);
-  }
+  // if (isMockApi) {
+  //   setMockSurveys(getMockSurveys().filter((item) => item.id !== surveyId));
+  //   return mockDelay(undefined);
+  // }
 
   return request<void>(`/api/surveys/${surveyId}`, {
     method: "DELETE",
@@ -391,7 +391,7 @@ export async function importSurveyArticle(
 }
 
 export function deleteSurveyArticle(surveyId: string, articleId: string): Promise<void> {
-  if (isMockApi) return mockDelay(undefined);
+  // if (isMockApi) return mockDelay(undefined);
 
   return request<void>(`/api/surveys/${surveyId}/articles/${articleId}`, {
     method: "DELETE",
@@ -414,7 +414,7 @@ export function getContributors(surveyId: string): Promise<Contributor[]> {
 }
 
 export function addContributor(surveyId: string, contributor: Contributor): Promise<Contributor> {
-  if (isMockApi) return mockDelay(contributor);
+  // if (isMockApi) return mockDelay(contributor);
 
   return request<Contributor>(`/api/surveys/${surveyId}/contributors`, {
     method: "POST",
@@ -424,7 +424,7 @@ export function addContributor(surveyId: string, contributor: Contributor): Prom
 }
 
 export function removeContributor(surveyId: string, contributorId: string): Promise<void> {
-  if (isMockApi) return mockDelay(undefined);
+  // if (isMockApi) return mockDelay(undefined);
 
   return request<void>(`/api/surveys/${surveyId}/contributors/${contributorId}`, {
     method: "DELETE",
