@@ -1,22 +1,12 @@
-// import { useState } from "react";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { Plus, Search, FileText, Calendar, Edit, Trash2 } from "lucide-react";
+import { Search, FileText, Calendar, ArrowLeft } from "lucide-react";
 import { motion } from "motion/react";
 import { toast } from "sonner";
 import { Toaster } from "sonner";
-import { EditSurveyModal } from "../components/EditSurveyModal";
-import { deleteSurvey, getSurveys, saveSurvey } from "../api/client";
+import { getSurveysToReview } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
-
-export interface Survey {
-  id: string;
-  name: string;
-  description: string;
-  createdDate: string;
-  status: "In Progress" | "Completed" | "Draft";
-  totalArticles: number;
-}
+import type { Survey } from "./SurveysListPage";
 
 const statusConfig = {
   "In Progress": {
@@ -36,70 +26,25 @@ const statusConfig = {
   },
 };
 
-export default function SurveysListPage() {
+export default function SurveysToReviewPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  // const [surveys, setSurveys] = useState<Survey[]>(mockSurveys);
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingSurvey, setEditingSurvey] = useState<Survey | null>(null);
+
   useEffect(() => {
-    getSurveys()
+    getSurveysToReview()
       .then(setSurveys)
-      .catch((err) => console.error("Fetch error:", err));
+      .catch((err) => {
+        console.error("Fetch error:", err);
+        toast.error("Failed to fetch surveys to review");
+      });
   }, []);
 
   const filteredSurveys = surveys.filter((survey) =>
     survey.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     survey.description.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const handleAddSurvey = () => {
-    setEditingSurvey(null);
-    setIsEditModalOpen(true);
-  };
-
-  const handleEditSurvey = (survey: Survey, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingSurvey(survey);
-    setIsEditModalOpen(true);
-  };
-
-  const handleSaveSurvey = (surveyData: Omit<Survey, "id" | "createdDate" | "totalArticles">) => {
-    if (editingSurvey) {
-      // Update existing survey
-      const updatedSurvey = { ...editingSurvey, ...surveyData };
-      setSurveys(surveys.map((s) =>
-        s.id === editingSurvey.id
-          ? updatedSurvey
-          : s
-      ));
-      saveSurvey(updatedSurvey).catch((err) => console.error("Save survey error:", err));
-      toast.success("Survey updated successfully!");
-    } else {
-      // Create new survey
-      const newSurvey: Survey = {
-        id: `survey-${Date.now()}`,
-        ...surveyData,
-        createdDate: new Date().toISOString().split("T")[0],
-        totalArticles: 0,
-      };
-      setSurveys([newSurvey, ...surveys]);
-      saveSurvey(newSurvey).catch((err) => console.error("Save survey error:", err));
-      toast.success("Survey created successfully!");
-    }
-    setIsEditModalOpen(false);
-  };
-
-  const handleDeleteSurvey = (surveyId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm("Are you sure you want to delete this survey? This action cannot be undone.")) {
-      setSurveys(surveys.filter((s) => s.id !== surveyId));
-      deleteSurvey(surveyId).catch((err) => console.error("Delete survey error:", err));
-      toast.success("Survey deleted");
-    }
-  };
 
   const handleViewSurvey = (surveyId: string) => {
     navigate(`/survey/${surveyId}`);
@@ -112,11 +57,19 @@ export default function SurveysListPage() {
       {/* Header */}
       <div className="border-b border-gray-200 bg-white">
         <div className="max-w-6xl mx-auto px-6 py-8">
+          <button
+            onClick={() => navigate(-1)}
+            className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-900 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </button>
+          
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-semibold text-gray-900">Surveys</h1>
+              <h1 className="text-3xl font-semibold text-gray-900">Surveys to Review</h1>
               <p className="text-sm text-gray-500 mt-1">
-                Manage your systematic literature reviews
+                Surveys you have been assigned to review
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -132,20 +85,6 @@ export default function SurveysListPage() {
                   </button>
                 </div>
               )}
-              <button
-                onClick={() => navigate("/surveys/to-review")}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-              >
-                <FileText className="w-4 h-4" />
-                To Review
-              </button>
-              <button
-                onClick={handleAddSurvey}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-              >
-                <Plus className="w-4 h-4" />
-                New Survey
-              </button>
             </div>
           </div>
 
@@ -171,27 +110,18 @@ export default function SurveysListPage() {
               <FileText className="w-8 h-8 text-gray-400" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {searchQuery ? "No surveys found" : "No surveys yet"}
+              {searchQuery ? "No surveys found" : "No pending reviews"}
             </h3>
             <p className="text-sm text-gray-500 mb-6">
               {searchQuery
                 ? "Try adjusting your search query"
-                : "Create your first systematic review to get started"}
+                : "You have reviewed all your assigned surveys."}
             </p>
-            {!searchQuery && (
-              <button
-                onClick={handleAddSurvey}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-              >
-                <Plus className="w-4 h-4" />
-                Create Survey
-              </button>
-            )}
           </div>
         ) : (
           <div className="space-y-4">
             {filteredSurveys.map((survey) => {
-              const status = statusConfig[survey.status];
+              const status = statusConfig[survey.status as keyof typeof statusConfig] || statusConfig.Draft;
               return (
                 <motion.div
                   key={survey.id}
@@ -226,22 +156,6 @@ export default function SurveysListPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 ml-4">
-                      <button
-                        onClick={(e) => handleEditSurvey(survey, e)}
-                        className="inline-flex items-center justify-center w-9 h-9 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Edit survey"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => handleDeleteSurvey(survey.id, e)}
-                        className="inline-flex items-center justify-center w-9 h-9 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete survey"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
                   </div>
                 </motion.div>
               );
@@ -249,14 +163,6 @@ export default function SurveysListPage() {
           </div>
         )}
       </div>
-
-      {/* Edit Modal */}
-      <EditSurveyModal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        onSave={handleSaveSurvey}
-        survey={editingSurvey}
-      />
     </div>
   );
 }

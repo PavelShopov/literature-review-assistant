@@ -430,3 +430,7 @@ export function removeContributor(surveyId: string, contributorId: string): Prom
     method: "DELETE",
   });
 }
+
+export function getSurveysToReview(): Promise<Survey[]> {
+  return request<Survey[]>("/api/reviews/surveys");
+}

@@ -1,5 +1,6 @@
 import { createBrowserRouter } from "react-router";
 import SurveysListPage from "./pages/SurveysListPage";
+import SurveysToReviewPage from "./pages/SurveysToReviewPage";
 import SurveyDetailsPage from "./pages/SurveyDetailsPage";
 import EditArticlePage from "./pages/EditArticlePage";
 import ArticleDetailsPage from "./pages/ArticleDetails";
@@ -25,6 +26,10 @@ export const router = createBrowserRouter([
       {
         path: "/survey",
         Component: SurveysListPage,
+      },
+      {
+        path: "/surveys/to-review",
+        Component: SurveysToReviewPage,
       },
       {
         path: "/survey/:surveyId",

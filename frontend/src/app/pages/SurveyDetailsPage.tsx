@@ -667,7 +667,7 @@ export default function SurveyDetailsPage() {
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Quick Actions
               </h2>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <button
                   onClick={() => setActiveTab("articles")}
                   className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
@@ -683,6 +683,14 @@ export default function SurveyDetailsPage() {
                   <Sparkles className="w-5 h-5 text-purple-600 mb-2" />
                   <p className="text-sm font-medium text-gray-900">Ask AI</p>
                   <p className="text-xs text-gray-500">Get insights from your research</p>
+                </button>
+                <button
+                  onClick={() => setActiveTab("reviewers")}
+                  className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
+                >
+                  <UsersRound className="w-5 h-5 text-green-600 mb-2" />
+                  <p className="text-sm font-medium text-gray-900">Add Reviewers</p>
+                  <p className="text-xs text-gray-500">Assign reviewers to this survey</p>
                 </button>
               </div>
             </div>
