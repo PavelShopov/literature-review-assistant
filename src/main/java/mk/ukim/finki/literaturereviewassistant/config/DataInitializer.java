@@ -104,6 +104,9 @@ public class DataInitializer implements CommandLineRunner {
         if (surveyRepository.count() > 0) {
             return;
         }
+        if (surveyRepository.count() > 0) {
+            return;
+        }
 
         Survey healthcare = createSurvey(
                 "survey-001",
