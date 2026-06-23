@@ -92,7 +92,11 @@ public class SurveyServiceImpl implements SurveyService {
         if(currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)){
             return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
         }
-        return new ArrayList<>();
+        return surveyRepository.findAll().stream()
+                .filter(survey -> survey.getReviewers().stream()
+                        .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
+                .map(this::toSurveyDto)
+                .toList();
     }
 
     @Override

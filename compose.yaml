@@ -10,5 +10,17 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  app:
+    build: .
+    ports:
+      - "1234:8080"
+    volumes:
+      - uploads_data:/app/uploads  # Docker manages this storage internally
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/literature_db
+
 volumes:
   postgres_data:
+  uploads_data:

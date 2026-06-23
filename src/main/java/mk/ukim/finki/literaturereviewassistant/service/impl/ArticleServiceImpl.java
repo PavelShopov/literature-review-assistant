@@ -17,12 +17,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.util.*;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class ArticleServiceImpl implements ArticleService{
+
+    private final DocumentFileServiceImpl documentFileService;
 
     private final ArticleRepository articleRepository;
     private final AuthorRepository authorRepository;
@@ -113,9 +116,9 @@ public class ArticleServiceImpl implements ArticleService{
 
             Article saved = articleRepository.save(article);
 
-            if (meta.getPdfBytes() != null) {
-                attachDocument(saved, meta.getPdfBytes(), DocumentType.PDF);
-            }
+//            if (meta.getPdfBytes() != null) {
+//                attachDocument(saved, meta.getPdfBytes(), DocumentType.PDF);
+//            }
             return saved;
         });
     }
@@ -147,7 +150,11 @@ public class ArticleServiceImpl implements ArticleService{
 
         Article saved = articleRepository.save(article);
 
-        attachDocument(saved, bytes, DocumentType.PDF);
+        try {
+            attachDocument(saved, pdfFile, DocumentType.PDF);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         return saved;
     }
 
@@ -382,10 +389,14 @@ public class ArticleServiceImpl implements ArticleService{
     /**
      * Create and persist a Document entity linked to the given article.
      */
-    private void attachDocument(Article article, byte[] content, DocumentType type) {
+    private void attachDocument(Article article, MultipartFile file, DocumentType type) throws IOException {
         Document doc = new Document();
         doc.setArticle(article);
         doc.setType(type);
+        String fileName = documentFileService.uploadFile(file);
+        doc.setFilePath(fileName);
+        doc.setTitle(file.getOriginalFilename());
+
 //        doc.setContent(content);
 //        doc.setExtractedText(pdfExtractorService.extractText(content));
         documentRepository.save(doc);

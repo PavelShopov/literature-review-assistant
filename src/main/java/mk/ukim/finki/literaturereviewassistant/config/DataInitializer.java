@@ -58,6 +58,9 @@ public class DataInitializer implements CommandLineRunner {
 
             userRepository.save(admin);
         }
+        if (surveyRepository.count() > 0) {
+            return;
+        }
 
         Survey healthcare = createSurvey(
                 "survey-001",
