@@ -89,12 +89,20 @@ public class SurveyServiceImpl implements SurveyService {
     @Transactional(readOnly = true)
     public List<SurveyDto> findAllSurveys(String authorizationHeader) {
         Optional<AppUser> currentUser = currentUser(authorizationHeader);
-        if(currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)){
+        if (currentUser.isEmpty()) {
+            return List.of();
+        }
+
+        AppUser user = currentUser.get();
+        if ("ADMIN".equals(user.getRole())) {
             return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
         }
+
         return surveyRepository.findAll().stream()
                 .filter(survey -> survey.getReviewers().stream()
-                        .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
+                        .anyMatch(contributor -> contributor.getEmail() != null
+                                && user.getEmail() != null
+                                && contributor.getEmail().equalsIgnoreCase(user.getEmail())))
                 .map(this::toSurveyDto)
                 .toList();
     }
