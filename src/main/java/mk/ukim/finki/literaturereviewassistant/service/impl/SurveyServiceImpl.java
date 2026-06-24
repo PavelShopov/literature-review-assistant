@@ -711,6 +711,53 @@ public class SurveyServiceImpl implements SurveyService {
         return metadata;
     }
 
+    // Add this method inside your SurveyServiceImpl class
+
+    @Override
+    @Transactional
+    public SurveyDetailsDto createNewSurveyWithArticle(String name, String initialArticleId, String authorizationToken) {
+        // 1. Fetch the source article template
+        Article sourceArticle = articleRepository.findByExternalId(initialArticleId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Source article not found"));
+
+        // 2. Instantiate the Survey shell structure
+        Survey survey = new Survey();
+        survey.setExternalId(java.util.UUID.randomUUID().toString());
+        survey.setTitle(name);
+        survey.setDescription("Survey created dynamically from referenced AI discovery asset.");
+        survey.setResearchQuestion("Define your research target query parameter here.");
+        survey.setCreatedDate(java.time.LocalDate.now());
+        survey.setStatus("In Progress");
+        survey.setArticleLinks(new ArrayList<>());
+        survey.setReviewers(new ArrayList<>());
+
+        // Attach owner logic here (Spring Security block from previous step)
+        // ...
+
+        // 3. Create the link entity and bind BOTH sides cleanly in memory
+        ArticleSurvey associationLink = new ArticleSurvey();
+        associationLink.setSurvey(survey);         // Link back to our survey shell
+        associationLink.setArticle(sourceArticle); // Link forward to our article asset
+
+        // Set status based on your domain implementation type (Enum or String)
+        try {
+            associationLink.setStatus(ArticleStatus.PENDING);
+        } catch (Exception e) {
+            // Fallback if your entity uses a standard String field instead of an Enum
+            // associationLink.setStatus("PENDING");
+        }
+
+        // 4. Add the link directly to the survey's own internal managed collection
+        survey.getArticleLinks().add(associationLink);
+
+        // 5. Save the survey. Because cascading is enabled on your OneToMany collection,
+        // Hibernate will automatically discover the associationLink and save it for you.
+        Survey savedSurvey = surveyRepository.save(survey);
+
+        // 6. Project structural entity context directly back into your UI data record layout
+        return toSurveyDetailsDto(savedSurvey);
+    }
+
     private Article saveImportedArticle(Survey survey, AddedByDto addedBy, ArticleMetadata metadata, String fallbackFileName) {
         // 1. Double check if the article already exists by DOI to prevent duplication
         if (metadata.getDoi() != null && !metadata.getDoi().isBlank()) {

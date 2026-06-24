@@ -34,7 +34,12 @@ export const router = createBrowserRouter([
         path: "/survey/:surveyId/articles",
         Component: SurveyDetailsPage,
       },
-      //
+      // Fixed: Appended /view to match your SurveyDetailsPage handleView navigation precisely
+      {
+        path: "/survey/:surveyId/articles/:articleId/view",
+        Component: ArticleDetailsPage,
+      },
+      // Optional Fallback: Just in case you ever navigate without /view elsewhere
       {
         path: "/survey/:surveyId/articles/:articleId",
         Component: ArticleDetailsPage,
