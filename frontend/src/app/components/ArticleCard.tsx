@@ -13,6 +13,11 @@ export interface Article {
   status: ArticleStatus;
   abstract?: string;
   inclusionSummary?: string;
+  url?: string | null;
+  openUrl?: string | null;
+  openType?: "pdf" | "external" | "doi" | null;
+  hasPdf?: boolean;
+  pdfUrl?: string | null;
   addedBy?: {
     id: string;
     name: string;
@@ -23,8 +28,10 @@ export interface Article {
 interface ArticleCardProps {
   article: Article;
   onView: (id: string) => void;
+  onOpen: (article: Article) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onUpdateStatus: (id: string, status: ArticleStatus) => void;
   canEdit?: boolean;
   canDelete?: boolean;
 }
@@ -50,8 +57,10 @@ const statusConfig = {
 export function ArticleCard({
   article,
   onView,
+  onOpen,
   onEdit,
   onDelete,
+  onUpdateStatus,
   canEdit = true,
   canDelete = true,
 }: ArticleCardProps) {
@@ -68,17 +77,42 @@ export function ArticleCard({
       <div className="p-6">
         {/* Status Badge */}
         <div className="flex items-center justify-between mb-4">
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${status.bg} ${status.text} ${status.border} border`}
-          >
-            {article.status}
-          </span>
+          <div className="flex flex-col gap-2">
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${status.bg} ${status.text} ${status.border} border`}
+            >
+              {article.status}
+            </span>
+            <div className="flex gap-1">
+              {(["INCLUDED", "EXCLUDED", "PENDING"] as ArticleStatus[]).map((nextStatus) => {
+                const active = article.status === nextStatus;
+                return (
+                  <button
+                    key={nextStatus}
+                    type="button"
+                    onClick={() => onUpdateStatus(article.id, nextStatus)}
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors ${
+                      active
+                        ? nextStatus === "INCLUDED"
+                          ? "border-green-300 bg-green-600 text-white"
+                          : nextStatus === "EXCLUDED"
+                            ? "border-red-300 bg-red-600 text-white"
+                            : "border-yellow-300 bg-yellow-600 text-white"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {nextStatus}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <span className="text-xs text-gray-500">{article.year}</span>
         </div>
 
         {/* Title */}
         <h3
-          onClick={() => onView(article.id)}
+          onClick={() => article.openUrl ? onOpen(article) : onView(article.id)}
           className="text-base font-semibold text-gray-900 mb-3 line-clamp-2 cursor-pointer hover:text-blue-600 transition-colors"
         >
           {article.title}
@@ -126,11 +160,11 @@ export function ArticleCard({
         {/* Actions */}
         <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
           <button
-            onClick={() => onView(article.id)}
+            onClick={() => article.openUrl ? onOpen(article) : onView(article.id)}
             className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
           >
-            <Eye className="w-4 h-4" />
-            View
+            {article.openUrl ? <ExternalLink className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            {article.openUrl ? "Open article" : "View details"}
           </button>
           {canEdit && (
             <button

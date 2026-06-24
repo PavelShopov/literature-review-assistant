@@ -29,8 +29,7 @@ public class BibTexParser {
         try (Reader reader = new StringReader(bibtexText)) {
             return parse(reader);
         } catch (Exception e) {
-            e.printStackTrace();
-            return List.of();
+            throw new IllegalArgumentException("Malformed BibTeX input", e);
         }
     }
 

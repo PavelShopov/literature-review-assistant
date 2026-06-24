@@ -1,166 +1,171 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
-
-interface ArticleDto {
-    externalId: string;
-    title: string;
-    journal: string;
-    publicationYear: number;
-    doi: string;
-    url: string;
-    status: string;
-    articleAbstract: string;
-    inclusionSummary: string;
-    addedById: string;
-    addedByName: string;
-    addedByRole: string;
-    authors: string[];
-}
+import { useEffect, useState } from "react";
+import { ExternalLink, FileText } from "lucide-react";
+import { useNavigate, useParams } from "react-router";
+import { toast } from "sonner";
+import { getArticle, openArticleResource, updateSurveyArticle } from "../api/client";
+import type { Article, ArticleStatus } from "../components/ArticleCard";
 
 export default function ArticleDetails() {
-    const { surveyId, articleId } = useParams<{ surveyId: string; articleId: string }>();
-    const navigate = useNavigate();
+  const { surveyId, articleId } = useParams<{ surveyId: string; articleId: string }>();
+  const navigate = useNavigate();
+  const [article, setArticle] = useState<Article | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-    const [article, setArticle] = useState<ArticleDto | null>(null);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!articleId) return;
+    setLoading(true);
+    getArticle(articleId)
+      .then(setArticle)
+      .catch((err) => setError(err instanceof Error ? err.message : "Article could not be loaded"))
+      .finally(() => setLoading(false));
+  }, [articleId]);
 
-    useEffect(() => {
-        async function fetchArticleDetails() {
-            try {
-                setLoading(true);
-                const response = await fetch(`http://localhost:8080/api/surveys/${surveyId}/articles/${articleId}`);
+  const open = (preferPdf = false) => {
+    if (!article) return;
+    openArticleResource(article, preferPdf)
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Article could not be opened"));
+  };
 
-                if (!response.ok) {
-                    if (response.status === 404) {
-                        throw new Error("Артиклот не е пронајден во базата на податоци.");
-                    }
-                    throw new Error("Се случи грешка при преземање на податоците.");
-                }
+  const updateStatus = (status: ArticleStatus) => {
+    if (!article || !surveyId) return;
 
-                const data = await response.json();
-                setArticle(data);
-            } catch (err: any) {
-                setError(err.message || "Нешто тргна наопаку.");
-            } finally {
-                setLoading(false);
-            }
-        }
+    updateSurveyArticle(surveyId, article.id, {
+      title: article.title,
+      authors: article.authors,
+      journal: article.journal,
+      year: article.year,
+      doi: article.doi,
+      status,
+      abstract: article.abstract ?? "",
+      inclusionSummary: article.inclusionSummary ?? "",
+    })
+      .then((updated) => {
+        setArticle(updated);
+        toast.success(`Status updated to ${status}`);
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Status update failed"));
+  };
 
-        if (surveyId && articleId) {
-            fetchArticleDetails();
-        }
-    }, [surveyId, articleId]);
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center text-gray-600">Loading article…</div>;
+  }
 
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center h-screen">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                <span className="ml-3 text-lg text-gray-600">Се вчитуваат деталите за артиклот...</span>
-            </div>
-        );
-    }
-
-    if (error || !article) {
-        return (
-            <div className="max-w-4xl mx-auto mt-10 p-6 bg-red-50 rounded-lg border border-red-200">
-                <h2 className="text-red-700 text-xl font-bold mb-2">Грешка при вчитување</h2>
-                <p className="text-red-600">{error || "Артиклот не може да се прикаже."}</p>
-                <button
-                    onClick={() => navigate(`/surveys/${surveyId}`)}
-                    className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition"
-                >
-                    Назад кон анкетата
-                </button>
-            </div>
-        );
-    }
-
+  if (error || !article) {
     return (
-        <div className="max-w-5xl mx-auto my-10 p-8 bg-white shadow-md rounded-xl border border-gray-100">
-            {/* Копче за назад */}
-            <button
-                onClick={() => navigate(`/surveys/${surveyId}`)}
-                className="mb-6 flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition"
-            >
-                ← Назад кон детали за анкетата
-            </button>
+      <div className="mx-auto mt-10 max-w-4xl rounded-lg border border-red-200 bg-red-50 p-6">
+        <h2 className="mb-2 text-xl font-bold text-red-700">Article failed to load</h2>
+        <p className="text-red-600">{error ?? "Article not found"}</p>
+        <button
+          onClick={() => navigate(`/survey/${surveyId}`)}
+          className="mt-4 rounded bg-red-600 px-4 py-2 text-white hover:bg-red-700"
+        >
+          Back to survey
+        </button>
+      </div>
+    );
+  }
 
-            {/* Наслов и Основни информации */}
-            <div className="border-b border-gray-200 pb-6">
-        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold ${
-            article.status === 'INCLUDED' ? 'bg-green-100 text-green-800' :
-                article.status === 'EXCLUDED' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-        }`}>
+  return (
+    <div className="mx-auto my-10 max-w-5xl rounded-xl border border-gray-100 bg-white p-8 shadow-md">
+      <button
+        onClick={() => navigate(`/survey/${surveyId}`)}
+        className="mb-6 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+      >
+        ← Back to survey
+      </button>
+
+      <div className="border-b border-gray-200 pb-6">
+        <span className="inline-flex rounded-full bg-yellow-100 px-3 py-1 text-sm font-semibold text-yellow-800">
           {article.status}
         </span>
-
-                <h1 className="mt-3 text-3xl font-extrabold text-gray-900 tracking-tight">
-                    {article.title}
-                </h1>
-
-                <p className="mt-2 text-md text-gray-500">
-                    Објавено во: <span className="font-semibold text-gray-700">{article.journal}</span> ({article.publicationYear})
-                </p>
-            </div>
-
-            {/* Автори */}
-            <div className="mt-6">
-                <h3 className="text-lg font-bold text-gray-900">Автори:</h3>
-                <div className="mt-2 flex flex-wrap gap-2">
-                    {article.authors && article.authors.length > 0 ? (
-                        article.authors.map((author, index) => (
-                            <span key={index} className="bg-gray-100 text-gray-800 text-sm px-3 py-1 rounded-md border border-gray-200">
-                {author}
-              </span>
-                        ))
-                    ) : (
-                        <span className="text-gray-500 text-sm italic">Нема зачувано автори за овој артикл.</span>
-                    )}
-                </div>
-            </div>
-
-            {/* Останати метаподатоци (DOI / URL) */}
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
-                <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-gray-400">DOI</span>
-                    <p className="text-sm font-medium text-gray-800">{article.doi || "N/A"}</p>
-                </div>
-                <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Линк до оригинален труд</span>
-                    <p className="text-sm">
-                        {article.url ? (
-                            <a href={article.url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-medium">
-                                Отвори надворешна врска ↗
-                            </a>
-                        ) : "N/A"}
-                    </p>
-                </div>
-            </div>
-
-            {/* Апстракт */}
-            <div className="mt-8">
-                <h3 className="text-xl font-bold text-gray-900 border-b pb-2">Abstract</h3>
-                <p className="mt-3 text-gray-700 leading-relaxed text-justify whitespace-pre-line">
-                    {article.articleAbstract || "Нема достапен апстракт за овој труд."}
-                </p>
-            </div>
-
-            {/* Резиме за инклузија (Доколку го има) */}
-            {article.inclusionSummary && (
-                <div className="mt-8 p-4 bg-indigo-50 rounded-lg border border-indigo-100">
-                    <h3 className="text-lg font-bold text-indigo-900">Образложение за статус (Inclusion Summary)</h3>
-                    <p className="mt-2 text-sm text-indigo-900 leading-relaxed">
-                        {article.inclusionSummary}
-                    </p>
-                </div>
-            )}
-
-            {/* Информации за тој што го додал артиклот */}
-            <div className="mt-8 pt-6 border-t border-gray-200 text-xs text-gray-400 flex justify-between">
-                <span>Додадено од: <strong>{article.addedByName}</strong> ({article.addedByRole})</span>
-                <span>ID на труд: {article.externalId}</span>
-            </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(["INCLUDED", "EXCLUDED", "PENDING"] as ArticleStatus[]).map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => updateStatus(status)}
+              className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                article.status === status
+                  ? status === "INCLUDED"
+                    ? "border-green-600 bg-green-600 text-white"
+                    : status === "EXCLUDED"
+                      ? "border-red-600 bg-red-600 text-white"
+                      : "border-yellow-600 bg-yellow-600 text-white"
+                  : "border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              {status}
+            </button>
+          ))}
         </div>
-    );
+        <h1
+          onClick={() => article.openUrl && open()}
+          className={`mt-3 text-3xl font-extrabold text-gray-900 ${article.openUrl ? "cursor-pointer hover:text-blue-700" : ""}`}
+        >
+          {article.title}
+        </h1>
+        <p className="mt-2 text-gray-500">
+          {article.journal || "Unknown publication"} {article.year ? `(${article.year})` : ""}
+        </p>
+
+        <div className="mt-5 flex flex-wrap gap-3">
+          {article.openUrl && (
+            <button
+              onClick={() => open()}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Open article
+            </button>
+          )}
+          {article.hasPdf && (
+            <button
+              onClick={() => open(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+            >
+              <FileText className="h-4 w-4" />
+              Open PDF
+            </button>
+          )}
+          {article.url && (
+            <a
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Publisher page
+            </a>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <h3 className="text-lg font-bold text-gray-900">Authors</h3>
+        <p className="mt-2 text-sm text-gray-700">
+          {article.authors?.length ? article.authors.join(", ") : "No authors available"}
+        </p>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-4 rounded-lg border border-gray-100 bg-gray-50 p-4 md:grid-cols-2">
+        <div>
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">DOI</span>
+          <p className="text-sm font-medium text-gray-800">{article.doi || "N/A"}</p>
+        </div>
+        <div>
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Resource</span>
+          <p className="text-sm font-medium text-gray-800">{article.openType || "N/A"}</p>
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <h3 className="border-b pb-2 text-xl font-bold text-gray-900">Abstract</h3>
+        <p className="mt-3 whitespace-pre-line text-justify leading-relaxed text-gray-700">
+          {article.abstract || "No abstract is available for this article."}
+        </p>
+      </div>
+    </div>
+  );
 }

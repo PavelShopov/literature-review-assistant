@@ -33,6 +33,7 @@ import {
   getSurvey,
   getSurveyArticles,
   importSurveyArticle,
+  openArticleResource,
   mockArticles,
   removeContributor,
   updateSurveyArticle,
@@ -435,7 +436,12 @@ export default function SurveyDetailsPage() {
   };
 
   const handleView = (id: string) => {
-    navigate(`/survey/${surveyId}/articles/${id}/view`);
+    navigate(`/survey/${surveyId}/articles/${id}`);
+  };
+
+  const handleOpen = (article: Article) => {
+    openArticleResource(article)
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Article could not be opened"));
   };
 
   const handleEdit = (id: string) => {
@@ -460,8 +466,29 @@ export default function SurveyDetailsPage() {
   };
 
   const handleUpdateStatus = (id: string, status: ArticleStatus) => {
-    setArticles(articles.map((a) => (a.id === id ? { ...a, status } : a)));
-    toast.success(`Status updated to ${status}`);
+    const article = articles.find((item) => item.id === id);
+    if (!article) {
+      toast.error("Article not found");
+      return;
+    }
+
+    updateSurveyArticle(surveyId, id, {
+      title: article.title,
+      authors: article.authors,
+      journal: article.journal,
+      year: article.year,
+      doi: article.doi,
+      status,
+      abstract: article.abstract ?? "",
+      inclusionSummary: article.inclusionSummary ?? "",
+    })
+      .then((updatedArticle) => {
+        setArticles((currentArticles) =>
+          currentArticles.map((current) => (current.id === id ? updatedArticle : current)),
+        );
+        toast.success(`Status updated to ${status}`);
+      })
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Status update failed"));
   };
 
   // Filter articles based on current filter
@@ -756,8 +783,10 @@ export default function SurveyDetailsPage() {
                       key={article.id}
                       article={article}
                       onView={handleView}
+                      onOpen={handleOpen}
                       onEdit={handleEdit}
                       onDelete={handleDelete}
+                      onUpdateStatus={handleUpdateStatus}
                       canEdit={isOwnerView || article.addedBy?.id === currentUser.id}
                       canDelete={isOwnerView || article.addedBy?.id === currentUser.id}
                     />

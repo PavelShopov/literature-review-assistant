@@ -15,6 +15,11 @@ public record ArticleDto(
         @JsonProperty("abstract")
         String abstractText,
         String inclusionSummary,
-        AddedByDto addedBy
+        AddedByDto addedBy,
+        String url,
+        String openUrl,
+        String openType,
+        boolean hasPdf,
+        String pdfUrl
 ) {
 }

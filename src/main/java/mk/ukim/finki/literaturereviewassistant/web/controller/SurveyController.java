@@ -6,6 +6,8 @@ import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
 import mk.ukim.finki.literaturereviewassistant.web.dto.*;
 import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -115,6 +117,22 @@ public class SurveyController {
     @GetMapping("/articles/{articleId}")
     public ArticleDto getArticleById(@PathVariable String articleId) {
         return surveyService.findArticle(articleId);
+    }
+
+    @GetMapping("/articles/{articleId}/pdf")
+    public ResponseEntity<byte[]> getArticlePdf(
+            @PathVariable String articleId,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        PdfDownload pdf = surveyService.findArticlePdf(articleId, authorization);
+        ContentDisposition disposition = ContentDisposition.inline()
+                .filename(pdf.fileName(), java.nio.charset.StandardCharsets.UTF_8)
+                .build();
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(pdf.mimeType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .body(pdf.content());
     }
 
     @GetMapping("/{surveyId}/contributors")
