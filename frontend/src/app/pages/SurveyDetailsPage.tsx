@@ -625,7 +625,6 @@ export default function SurveyDetailsPage() {
                   </div>
                 </div>
 
-<!-- <<<<<<< sandbox_combined -->
             <ContributorsPanel
               contributors={contributors}
               onAddContributor={handleAddContributor}
@@ -680,61 +679,7 @@ export default function SurveyDetailsPage() {
 
         {/* Articles Tab */}
         {activeTab === "articles" && (
-          <div className="space-y-6">
-            {/* Filter Info */}
-            {articleFilter !== "all" && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-blue-600" />
-                  <p className="text-sm font-medium text-blue-900">
-                    Showing: {articleFilter === "screened" ? "Screened Articles (Included & Excluded)" : "Pending Review"}
-                  </p>
-<!-- 
-                <ContributorsPanel
-                    contributors={contributors}
-                    onAddContributor={handleAddContributor}
-                    onRemoveContributor={handleRemoveContributor}
-                    canManageReviewers={isOwnerView}
-                />
-
-                <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl border border-gray-200 p-6">
-                  <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                    Quick Actions
-                  </h2>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                        onClick={() => setActiveTab("articles")}
-                        className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
-                    >
-                      <FileText className="w-5 h-5 text-blue-600 mb-2" />
-                      <p className="text-sm font-medium text-gray-900">Manage Articles</p>
-                      <p className="text-xs text-gray-500">Import and review papers</p>
-                    </button>
-                    <button
-                        onClick={() => setActiveTab("ask-ai")}
-                        className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
-                    >
-                      <Sparkles className="w-5 h-5 text-purple-600 mb-2" />
-                      <p className="text-sm font-medium text-gray-900">Ask AI</p>
-                      <p className="text-xs text-gray-500">Get insights from your research</p>
-                    </button>
-                  </div>
-  -->
-                </div>
-              </div>
-          )}
-
-          {activeTab === "reviewers" && (
-              <ContributorsPanel
-                  contributors={contributors}
-                  onAddContributor={handleAddContributor}
-                  onRemoveContributor={handleRemoveContributor}
-                  canManageReviewers={isOwnerView}
-              />
-          )}
-
-          {activeTab === "articles" && (
-              <div className="space-y-6">
+            <div className="space-y-6">
                 {articleFilter !== "all" && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
                       <div className="flex items-center gap-2">
