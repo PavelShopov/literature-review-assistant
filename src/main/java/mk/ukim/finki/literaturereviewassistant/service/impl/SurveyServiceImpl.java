@@ -90,33 +90,33 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
 
-    @Override
-    @Transactional(readOnly = true)
-    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
-        Optional<AppUser> currentUser = currentUser(authorizationHeader);
-        if (currentUser.isEmpty()) {
-            return List.of();
-        }
-
-        AppUser user = currentUser.get();
-        if ("ADMIN".equals(user.getRole())) {
-            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
-        }
-// <<<<<<< sandbox_combined
-
-        return surveyRepository.findAll().stream()
-                .filter(survey -> survey.getReviewers().stream()
-                        .anyMatch(contributor -> contributor.getEmail() != null
-                                && user.getEmail() != null
-                                && contributor.getEmail().equalsIgnoreCase(user.getEmail())))
-// =======
-//         return surveyRepository.findAll().stream()
-//                 .filter(survey -> survey.getReviewers().stream()
-//                         .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
-// >>>>>>> sandbox_branch
-                .map(this::toSurveyDto)
-                .toList();
-    }
+//    @Override
+//    @Transactional(readOnly = true)
+//    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
+//        Optional<AppUser> currentUser = currentUser(authorizationHeader);
+//        if (currentUser.isEmpty()) {
+//            return List.of();
+//        }
+//
+//        AppUser user = currentUser.get();
+//        if ("ADMIN".equals(user.getRole())) {
+//            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
+//        }
+//// <<<<<<< sandbox_combined
+//
+//        return surveyRepository.findAll().stream()
+//                .filter(survey -> survey.getReviewers().stream()
+//                        .anyMatch(contributor -> contributor.getEmail() != null
+//                                && user.getEmail() != null
+//                                && contributor.getEmail().equalsIgnoreCase(user.getEmail())))
+//// =======
+////         return surveyRepository.findAll().stream()
+////                 .filter(survey -> survey.getReviewers().stream()
+////                         .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
+//// >>>>>>> sandbox_branch
+//                .map(this::toSurveyDto)
+//                .toList();
+//    }
 
     @Override
     @Transactional(readOnly = true)

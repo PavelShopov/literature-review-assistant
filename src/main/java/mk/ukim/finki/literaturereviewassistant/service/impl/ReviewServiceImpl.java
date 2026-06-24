@@ -10,6 +10,7 @@ import mk.ukim.finki.literaturereviewassistant.repository.ReviewerRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
 import mk.ukim.finki.literaturereviewassistant.service.AuthService;
 import mk.ukim.finki.literaturereviewassistant.service.ReviewService;
+import mk.ukim.finki.literaturereviewassistant.web.dto.ReviewableArticleDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.UserResponse;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ReviewRequest;
@@ -120,6 +121,11 @@ public class ReviewServiceImpl implements ReviewService {
             }
         }
         return surveysToReview;
+    }
+
+    @Override
+    public List<ReviewableArticleDto> getArticlesForReview(String authorizationHeader, String surveyId) {
+        return List.of();
     }
 
     private SurveyDto toSurveyDto(Survey survey) {
