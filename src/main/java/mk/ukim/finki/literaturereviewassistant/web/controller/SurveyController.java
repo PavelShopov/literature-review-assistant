@@ -211,4 +211,26 @@ public class SurveyController {
                 ownerDto                                                                     // 10. owner (UserResponse)
         );
     }
+
+    @PostMapping("/create-with-article")
+    public ResponseEntity<SurveyDetailsDto> createSurveyWithArticle(
+            @RequestBody CreateSurveyWithArticleRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        if (request.getName() == null || request.getName().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Survey name is required");
+        }
+        if (request.getInitialArticleId() == null || request.getInitialArticleId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Initial article ID is required");
+        }
+
+        // Delegate creation and mapping logic to the service layer
+        SurveyDetailsDto newSurveyDto = surveyService.createNewSurveyWithArticle(
+                request.getName(),
+                request.getInitialArticleId(),
+                authorization
+        );
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(newSurveyDto);
+    }
 }

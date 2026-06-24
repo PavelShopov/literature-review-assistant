@@ -277,11 +277,12 @@ export function deleteSurvey(surveyId: string): Promise<void> {
 }
 
 export function getArticle(articleId: string): Promise<Article> {
-  if (isMockApi) {
-    const article = mockArticles.find((item) => item.id === articleId) ?? mockArticles[0];
-    return mockDelay(article);
-  }
+  // if (isMockApi) {
+  //   const article = mockArticles.find((item) => item.id === articleId) ?? mockArticles[0];
+  //   return mockDelay(article);
+  // }
 
+  // Double-check that your Spring Boot endpoint context maps exactly to this endpoint configuration:
   return request<Article>(`/api/surveys/articles/${articleId}`);
 }
 
@@ -299,15 +300,15 @@ export function updateSurveyArticle(
     inclusionSummary?: string;
   },
 ): Promise<Article> {
-  if (isMockApi) {
-    const article = mockArticles.find((item) => item.id === articleId) ?? mockArticles[0];
-    return mockDelay({
-      ...article,
-      ...input,
-      id: articleId,
-      abstract: input.abstract,
-    });
-  }
+  // if (isMockApi) {
+  //   const article = mockArticles.find((item) => item.id === articleId) ?? mockArticles[0];
+  //   return mockDelay({
+  //     ...article,
+  //     ...input,
+  //     id: articleId,
+  //     abstract: input.abstract,
+  //   });
+  // }
 
   return request<Article>(`/api/surveys/${surveyId}/articles/${articleId}`, {
     method: "PUT",
@@ -325,17 +326,28 @@ export function updateSurveyArticle(
   });
 }
 
+export function createSurveyWithArticle(
+    surveyName: string,
+    articleId: string
+): Promise<SurveyDetails> {
+  return request<SurveyDetails>(`/api/surveys/create-with-article`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: surveyName, initialArticleId: articleId }),
+  });
+}
+
 export function getSurveyArticles(surveyId: string): Promise<Article[]> {
-  if (isMockApi) return mockDelay(mockArticles);
+  // if (isMockApi) return mockDelay(mockArticles);
   return request<Article[]>(`/api/surveys/${surveyId}/articles`);
 }
 
 export function askSurveyQuestion(surveyId: string, question: string): Promise<string> {
-  if (isMockApi) {
-    return mockDelay(
-      `Mock answer for: ${question}\n\nThis is returned by the mock frontend mode. Start the backend and use backend mode to query Ollama.`,
-    );
-  }
+  // if (isMockApi) {
+  //   return mockDelay(
+  //     `Mock answer for: ${question}\n\nThis is returned by the mock frontend mode. Start the backend and use backend mode to query Ollama.`,
+  //   );
+  // }
 
   return requestText(`/api/surveys/${surveyId}/ask`, {
     method: "POST",
@@ -352,21 +364,21 @@ export async function importSurveyArticle(
     addedBy: NonNullable<Article["addedBy"]>;
   },
 ): Promise<Article> {
-  if (isMockApi) {
-    const newArticle: Article = {
-      id: Date.now().toString(),
-      title: `Imported Article via ${input.type.toUpperCase()}`,
-      authors: ["Author, A.", "Researcher, B."],
-      journal: "Imported Journal",
-      year: new Date().getFullYear(),
-      doi: "10.1000/imported." + Date.now(),
-      status: "PENDING",
-      abstract: "This article was imported and needs to be reviewed.",
-      addedBy: input.addedBy,
-    };
+  // if (isMockApi) {
+  //   const newArticle: Article = {
+  //     id: Date.now().toString(),
+  //     title: `Imported Article via ${input.type.toUpperCase()}`,
+  //     authors: ["Author, A.", "Researcher, B."],
+  //     journal: "Imported Journal",
+  //     year: new Date().getFullYear(),
+  //     doi: "10.1000/imported." + Date.now(),
+  //     status: "PENDING",
+  //     abstract: "This article was imported and needs to be reviewed.",
+  //     addedBy: input.addedBy,
+  //   };
 
-    return mockDelay(newArticle);
-  }
+  //   return mockDelay(newArticle);
+  // }
 
   if (input.type === "pdf" && input.data instanceof File) {
     const payload = {

@@ -52,4 +52,7 @@ public interface SurveyService {
     ReviewerDto toReviewerDto(Reviewer reviewer);
 
     ArticleDto toArticleDto(Article article);
+
+    // Add this method signature inside your SurveyService interface
+    SurveyDetailsDto createNewSurveyWithArticle(String name, String initialArticleId, String authorizationToken);
 }
