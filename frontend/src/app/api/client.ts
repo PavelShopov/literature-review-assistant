@@ -364,21 +364,21 @@ export async function importSurveyArticle(
     addedBy: NonNullable<Article["addedBy"]>;
   },
 ): Promise<Article> {
-  if (isMockApi) {
-    const newArticle: Article = {
-      id: Date.now().toString(),
-      title: `Imported Article via ${input.type.toUpperCase()}`,
-      authors: ["Author, A.", "Researcher, B."],
-      journal: "Imported Journal",
-      year: new Date().getFullYear(),
-      doi: "10.1000/imported." + Date.now(),
-      status: "PENDING",
-      abstract: "This article was imported and needs to be reviewed.",
-      addedBy: input.addedBy,
-    };
+  // if (isMockApi) {
+  //   const newArticle: Article = {
+  //     id: Date.now().toString(),
+  //     title: `Imported Article via ${input.type.toUpperCase()}`,
+  //     authors: ["Author, A.", "Researcher, B."],
+  //     journal: "Imported Journal",
+  //     year: new Date().getFullYear(),
+  //     doi: "10.1000/imported." + Date.now(),
+  //     status: "PENDING",
+  //     abstract: "This article was imported and needs to be reviewed.",
+  //     addedBy: input.addedBy,
+  //   };
 
-    return mockDelay(newArticle);
-  }
+  //   return mockDelay(newArticle);
+  // }
 
   if (input.type === "pdf" && input.data instanceof File) {
     const payload = {
