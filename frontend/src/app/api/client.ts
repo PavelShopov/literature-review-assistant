@@ -326,16 +326,16 @@ export function updateSurveyArticle(
 }
 
 export function getSurveyArticles(surveyId: string): Promise<Article[]> {
-  if (isMockApi) return mockDelay(mockArticles);
+  // if (isMockApi) return mockDelay(mockArticles);
   return request<Article[]>(`/api/surveys/${surveyId}/articles`);
 }
 
 export function askSurveyQuestion(surveyId: string, question: string): Promise<string> {
-  if (isMockApi) {
-    return mockDelay(
-      `Mock answer for: ${question}\n\nThis is returned by the mock frontend mode. Start the backend and use backend mode to query Ollama.`,
-    );
-  }
+  // if (isMockApi) {
+  //   return mockDelay(
+  //     `Mock answer for: ${question}\n\nThis is returned by the mock frontend mode. Start the backend and use backend mode to query Ollama.`,
+  //   );
+  // }
 
   return requestText(`/api/surveys/${surveyId}/ask`, {
     method: "POST",
