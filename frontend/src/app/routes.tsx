@@ -1,5 +1,6 @@
 import { createBrowserRouter } from "react-router";
 import SurveysListPage from "./pages/SurveysListPage";
+import SurveysToReviewPage from "./pages/SurveysToReviewPage";
 import SurveyDetailsPage from "./pages/SurveyDetailsPage";
 import EditArticlePage from "./pages/EditArticlePage";
 import ArticleDetailsPage from "./pages/ArticleDetails";
@@ -27,6 +28,10 @@ export const router = createBrowserRouter([
         Component: SurveysListPage,
       },
       {
+        path: "/surveys/to-review",
+        Component: SurveysToReviewPage,
+      },
+      {
         path: "/survey/:surveyId",
         Component: SurveyDetailsPage,
       },
@@ -34,7 +39,12 @@ export const router = createBrowserRouter([
         path: "/survey/:surveyId/articles",
         Component: SurveyDetailsPage,
       },
-      //
+      // Fixed: Appended /view to match your SurveyDetailsPage handleView navigation precisely
+      {
+        path: "/survey/:surveyId/articles/:articleId/view",
+        Component: ArticleDetailsPage,
+      },
+      // Optional Fallback: Just in case you ever navigate without /view elsewhere
       {
         path: "/survey/:surveyId/articles/:articleId",
         Component: ArticleDetailsPage,

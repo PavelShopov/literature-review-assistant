@@ -22,11 +22,13 @@ public interface SurveyService {
 
     SurveyDetailsDto findSurvey(String surveyId);
 
+
     SurveyDto saveSurvey(String surveyId, SurveyRequest request, String authorizationHeader);
 
     void deleteSurvey(String surveyId);
 
     List<ArticleDto> findArticles(String surveyId);
+
 
     ArticleDto findArticle(String articleId);
 
@@ -53,4 +55,7 @@ public interface SurveyService {
     ReviewerDto toReviewerDto(Reviewer reviewer);
 
     ArticleDto toArticleDto(Article article);
+
+    // Add this method signature inside your SurveyService interface
+    SurveyDetailsDto createNewSurveyWithArticle(String name, String initialArticleId, String authorizationToken);
 }

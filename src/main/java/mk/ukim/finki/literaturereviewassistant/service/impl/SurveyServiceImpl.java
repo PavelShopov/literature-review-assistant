@@ -8,6 +8,8 @@ import mk.ukim.finki.literaturereviewassistant.repository.AuthSessionRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.DocumentRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.ReviewerRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
+import mk.ukim.finki.literaturereviewassistant.service.GeminiService;
+import mk.ukim.finki.literaturereviewassistant.service.GemmaService;
 import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
 import mk.ukim.finki.literaturereviewassistant.service.DataService.ArticleMetadata;
 import mk.ukim.finki.literaturereviewassistant.service.DataService.BibEntry;
@@ -69,8 +71,9 @@ public class SurveyServiceImpl implements SurveyService {
     private final ReviewerRepository reviewerRepository;
     private final BibTexParser bibTexParser;
     private final PdfExtractorService pdfExtractorService;
-    private final OllamaService ollamaService;
     private final RestTemplate restTemplate;
+    private final GeminiService geminiService;
+    private final GemmaService gemmaService;
 
     @Value("${paper.import.max-pdf-size:104857600}")
     private long maxPdfSize;
@@ -87,9 +90,9 @@ public class SurveyServiceImpl implements SurveyService {
             ReviewerRepository reviewerRepository,
             BibTexParser bibTexParser,
             PdfExtractorService pdfExtractorService,
-            OllamaService ollamaService,
-            RestTemplate restTemplate
-    ) {
+            RestTemplate restTemplate,
+            GeminiService geminiService,
+            GemmaService gemmaService) {
         this.surveyRepository = surveyRepository;
         this.articleRepository = articleRepository;
         this.authorRepository = authorRepository;
@@ -98,31 +101,12 @@ public class SurveyServiceImpl implements SurveyService {
         this.reviewerRepository = reviewerRepository;
         this.bibTexParser = bibTexParser;
         this.pdfExtractorService = pdfExtractorService;
-        this.ollamaService = ollamaService;
         this.restTemplate = restTemplate;
+        this.geminiService = geminiService;
+        this.gemmaService = gemmaService;
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
-        Optional<AppUser> currentUser = currentUser(authorizationHeader);
-        if (currentUser.isEmpty()) {
-            return List.of();
-        }
 
-        AppUser user = currentUser.get();
-        if ("ADMIN".equals(user.getRole())) {
-            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
-        }
-
-        return surveyRepository.findAll().stream()
-                .filter(survey -> survey.getReviewers().stream()
-                        .anyMatch(contributor -> contributor.getEmail() != null
-                                && user.getEmail() != null
-                                && contributor.getEmail().equalsIgnoreCase(user.getEmail())))
-                .map(this::toSurveyDto)
-                .toList();
-    }
 
     @Override
     @Transactional(readOnly = true)
@@ -133,17 +117,25 @@ public class SurveyServiceImpl implements SurveyService {
     @Override
     @Transactional
     public SurveyDto saveSurvey(String surveyId, SurveyRequest request, String authorizationHeader) {
-        // 1. If surveyId is "new" or empty, treat it as a fresh creation and generate a proper UUID
-        boolean isNew = (surveyId == null || surveyId.isBlank() || "new".equalsIgnoreCase(surveyId));
+        // 1. Check the database to see if this survey actually exists already
+        boolean existsInDb = surveyId != null && !surveyId.isBlank() && surveyRepository.findByExternalId(surveyId).isPresent();
 
-        Survey survey = isNew ? null : surveyRepository.findByExternalId(surveyId).orElse(null);
-        if (survey == null) {
+        // If it doesn't exist in the DB, treat it as a fresh creation workflow!
+        boolean isNew = !existsInDb;
+
+        Survey survey;
+        if (existsInDb) {
+            // It's an update! Grab the existing one
+            survey = surveyRepository.findByExternalId(surveyId).orElseThrow();
+        } else {
+            // It's a creation! Initialize a fresh entity
             survey = new Survey();
-            survey.setExternalId(isNew ? java.util.UUID.randomUUID().toString() : surveyId);
+            // Discard the frontend's temporary timestamp ID and assign a clean, secure UUID
+            survey.setExternalId("survey-" + java.util.UUID.randomUUID().toString());
             survey.setCreatedDate(LocalDate.now());
         }
 
-        // 2. Map standard request fields
+        // 2. Map standard request fields safely
         survey.setTitle(request.name());
         survey.setDescription(request.description());
         survey.setStatus(request.status() == null ? "Draft" : request.status());
@@ -156,10 +148,25 @@ public class SurveyServiceImpl implements SurveyService {
             survey.setResearchQuestion("Define the main research question for this survey.");
         }
 
-        Survey saved = surveyRepository.save(survey);
-        ensureOwner(saved, authorizationHeader);
+        // 3. Bind the owner profile before storing
+        ensureOwner(survey, authorizationHeader);
 
-        return toSurveyDto(saved);
+        // 4. Save the completed entity structure
+        Survey savedSurvey = surveyRepository.save(survey);
+
+        // 5. Explicitly break out early if it's a creation step to bypass proxy execution loops
+        if (isNew) {
+            return new SurveyDto(
+                    savedSurvey.getExternalId(),
+                    savedSurvey.getTitle(),
+                    savedSurvey.getDescription(),
+                    safeDate(savedSurvey.getCreatedDate()),
+                    savedSurvey.getStatus(),
+                    0 // Brand new, no articles exist yet!
+            );
+        }
+
+        return toSurveyDto(savedSurvey);
     }
 
     @Override
@@ -418,7 +425,10 @@ public class SurveyServiceImpl implements SurveyService {
                 question
         );
 
-        return ollamaService.chat(prompt);
+        System.out.println("Prompt: ");
+        System.out.println(prompt);
+
+        return gemmaService.callGemma(prompt);
     }
 
     private Survey getSurveyOrThrow(String surveyId) {
@@ -780,6 +790,53 @@ public class SurveyServiceImpl implements SurveyService {
             metadata.setTitle(extractTitleFromDoi(doi));
         }
         return metadata;
+    }
+
+    // Add this method inside your SurveyServiceImpl class
+
+    @Override
+    @Transactional
+    public SurveyDetailsDto createNewSurveyWithArticle(String name, String initialArticleId, String authorizationToken) {
+        // 1. Fetch the source article template
+        Article sourceArticle = articleRepository.findByExternalId(initialArticleId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Source article not found"));
+
+        // 2. Instantiate the Survey shell structure
+        Survey survey = new Survey();
+        survey.setExternalId(java.util.UUID.randomUUID().toString());
+        survey.setTitle(name);
+        survey.setDescription("Survey created dynamically from referenced AI discovery asset.");
+        survey.setResearchQuestion("Define your research target query parameter here.");
+        survey.setCreatedDate(java.time.LocalDate.now());
+        survey.setStatus("In Progress");
+        survey.setArticleLinks(new ArrayList<>());
+        survey.setReviewers(new ArrayList<>());
+
+        // Attach owner logic here (Spring Security block from previous step)
+        // ...
+
+        // 3. Create the link entity and bind BOTH sides cleanly in memory
+        ArticleSurvey associationLink = new ArticleSurvey();
+        associationLink.setSurvey(survey);         // Link back to our survey shell
+        associationLink.setArticle(sourceArticle); // Link forward to our article asset
+
+        // Set status based on your domain implementation type (Enum or String)
+        try {
+            associationLink.setStatus(ArticleStatus.PENDING);
+        } catch (Exception e) {
+            // Fallback if your entity uses a standard String field instead of an Enum
+            // associationLink.setStatus("PENDING");
+        }
+
+        // 4. Add the link directly to the survey's own internal managed collection
+        survey.getArticleLinks().add(associationLink);
+
+        // 5. Save the survey. Because cascading is enabled on your OneToMany collection,
+        // Hibernate will automatically discover the associationLink and save it for you.
+        Survey savedSurvey = surveyRepository.save(survey);
+
+        // 6. Project structural entity context directly back into your UI data record layout
+        return toSurveyDetailsDto(savedSurvey);
     }
 
     private Article saveImportedArticle(Survey survey, AddedByDto addedBy, ArticleMetadata metadata, String fallbackFileName) {
@@ -1211,84 +1268,169 @@ public class SurveyServiceImpl implements SurveyService {
         return null;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
+        Optional<AppUser> currentUser = currentUser(authorizationHeader);
+        if (currentUser.isEmpty()) {
+            return List.of();
+        }
+        if (currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)) {
+            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
+        }
+        // For non-admin users: only show surveys where they are the Owner.
+        // Surveys they are assigned to review (Reviewer role) are available via /api/reviews/surveys.
+        return surveyRepository.findAll().stream()
+                .filter(survey -> survey.getReviewers().stream()
+                        .anyMatch(contributor ->
+                                contributor.getEmail().equals(currentUser.get().getEmail())
+                                && "Owner".equals(contributor.getRole())))
+                .map(this::toSurveyDto)
+                .toList();
+    }
+
+//    @Override
+//    @Transactional(readOnly = true)
+//    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
+//        Optional<AppUser> currentUser = currentUser(authorizationHeader);
+//        if (currentUser.isEmpty()) {
+//            return List.of();
+//        }
+//
+//        AppUser user = currentUser.get();
+//        if ("ADMIN".equals(user.getRole())) {
+//            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
+//        }
+//
+//        return surveyRepository.findAll().stream()
+//                .filter(survey -> survey.getReviewers().stream()
+//                        .anyMatch(contributor -> contributor.getEmail() != null
+//                                && user.getEmail() != null
+//                                && contributor.getEmail().equalsIgnoreCase(user.getEmail())))
+    //// =======
+    ////         return surveyRepository.findAll().stream()
+    ////                 .filter(survey -> survey.getReviewers().stream()
+    ////                         .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
+//                .map(this::toSurveyDto)
+//                .toList();
+//    }
     private void ensureOwner(Survey survey, String authorizationHeader) {
-        // 1. Resolve the currently logged-in user from the token header
         Optional<AppUser> currentUserOpt = currentUser(authorizationHeader);
+
+        // 1. Initialize collections safely
+        if (survey.getReviewers() == null) {
+            survey.setReviewers(new java.util.ArrayList<>());
+        }
 
         if (currentUserOpt.isPresent()) {
             AppUser user = currentUserOpt.get();
 
-            // 2. Look up if this user already exists as a Reviewer anywhere in the database by their email
-            Optional<Reviewer> existingReviewerOpt = reviewerRepository.findByEmail(user.getEmail());
+//             // 2. Look up if this user already has an Owner Reviewer record (by AppUser + role).
+//             //    Since a user can also be a Reviewer on other surveys, we need to find specifically
+//             //    their "Owner" record (or create one if it doesn't exist yet).
+//             Optional<Reviewer> existingOwnerOpt = reviewerRepository.findByAppUserAndRole(user, "Owner");
+
+//             if (existingOwnerOpt.isPresent()) {
+//                 Reviewer existing = existingOwnerOpt.get();
+//                 // If they are already associated with this survey, do nothing
+//                 if (!existing.getSurveys().contains(survey)) {
+//                     existing.getSurveys().add(survey);
+//                     reviewerRepository.save(existing);
+//                 }
+//             } else {
+//                 // 3. No Owner Reviewer record for this AppUser yet — create one
+//                 List<Survey> associatedSurveys = new java.util.ArrayList<>();
+//                 associatedSurveys.add(survey);
+
+//                 Reviewer newOwner = new Reviewer(
+//                         null,
+//                         java.util.UUID.randomUUID().toString(),
+//                         user.getName(),
+//                         user.getEmail(),
+//                         "Owner",
+//                         Instant.now(),
+//                         user,
+//                         associatedSurveys,
+//                         new java.util.ArrayList<>()
+//                 );
+//                 reviewerRepository.save(newOwner);
+//             }
+// =======
+            // 2. Safely find or create the reviewer
+            Optional<Reviewer> existingReviewerOpt = reviewerRepository.findFirstByEmail(user.getEmail());
+            Reviewer targetOwner;
 
             if (existingReviewerOpt.isPresent()) {
-                Reviewer existingReviewer = existingReviewerOpt.get();
-
-                // If they are already associated with this survey, do nothing
-                if (existingReviewer.getSurveys().contains(survey)) {
-                    return;
-                }
-
-                // Otherwise, link this new survey to their existing profile
-                existingReviewer.getSurveys().add(survey);
-                reviewerRepository.save(existingReviewer);
+                targetOwner = existingReviewerOpt.get();
             } else {
-                // 3. User exists in DB as AppUser but NOT as a Reviewer yet. Create their Reviewer profile:
-                List<Survey> associatedSurveys = new java.util.ArrayList<>();
-                associatedSurveys.add(survey);
-
-                Reviewer newOwner = new Reviewer(
-                        null,
-                        java.util.UUID.randomUUID().toString(),
-                        user.getName(),
-                        user.getEmail(),
-                        "Owner", // Mark them securely as the Owner
-                        Instant.now(),
-                        user,
-                        associatedSurveys,
-                        new java.util.ArrayList<>()
-                );
-                reviewerRepository.save(newOwner);
+                targetOwner = new Reviewer();
+                targetOwner.setExternalId(java.util.UUID.randomUUID().toString());
+                targetOwner.setName(user.getName());
+                targetOwner.setEmail(user.getEmail());
+                targetOwner.setAddedDate(Instant.now());
+                targetOwner.setAppUser(user);
             }
+
+            // 3. Always ensure they hold the global Owner role if your system treats roles as global
+            targetOwner.setRole("Owner");
+
+            // 4. Safely synchronize bidirectional links without duplicate references
+            if (targetOwner.getSurveys() == null) {
+                targetOwner.setSurveys(new java.util.ArrayList<>());
+            }
+
+            if (!targetOwner.getSurveys().contains(survey)) {
+                targetOwner.getSurveys().add(survey);
+            }
+            if (!survey.getReviewers().contains(targetOwner)) {
+                survey.getReviewers().add(targetOwner);
+            }
+
+            // 5. Save ONLY the owning/cascading side of the relationship
+            reviewerRepository.save(targetOwner);
+
         } else {
-            // Fallback: Handle unauthenticated or anonymous requests safely (e.g., during local UI mock setups)
-            Optional<Reviewer> fallbackOwnerOpt = reviewerRepository.findByEmail("owner@example.com");
+            // Fallback: Handle unauthenticated requests safely
+            String fallbackEmail = "owner@example.com";
+            Reviewer fallbackOwner = reviewerRepository.findFirstByEmail(fallbackEmail)
+                    .orElseGet(() -> {
+                        Reviewer f = new Reviewer();
+                        f.setExternalId(java.util.UUID.randomUUID().toString());
+                        f.setName("Survey Owner");
+                        f.setEmail(fallbackEmail);
+                        f.setAddedDate(Instant.now());
+                        return f;
+                    });
 
-            if (fallbackOwnerOpt.isPresent()) {
-                Reviewer fallback = fallbackOwnerOpt.get();
-                if (!fallback.getSurveys().contains(survey)) {
-                    fallback.getSurveys().add(survey);
-                    reviewerRepository.save(fallback);
-                }
-            } else {
-                List<Survey> associatedSurveys = new java.util.ArrayList<>();
-                associatedSurveys.add(survey);
+            fallbackOwner.setRole("Owner");
 
-                Reviewer fallbackOwner = new Reviewer(
-                        null,
-                        java.util.UUID.randomUUID().toString(),
-                        "Survey Owner",
-                        "owner@example.com",
-                        "Owner",
-                        Instant.now(),
-                        null,
-                        associatedSurveys,
-                        new java.util.ArrayList<>()
-                );
-                reviewerRepository.save(fallbackOwner);
+            if (fallbackOwner.getSurveys() == null) {
+                fallbackOwner.setSurveys(new java.util.ArrayList<>());
             }
+
+            if (!fallbackOwner.getSurveys().contains(survey)) {
+                fallbackOwner.getSurveys().add(survey);
+            }
+            if (!survey.getReviewers().contains(fallbackOwner)) {
+                survey.getReviewers().add(fallbackOwner);
+            }
+
+            reviewerRepository.save(fallbackOwner);
         }
+        // No fallback for unauthenticated requests — survey creation requires auth
     }
 
     private SurveyDto toSurveyDto(Survey survey) {
-        List<Article> articles = articleRepository.findBySurveyLinks_Survey(survey);
+        String extId = survey == null ? null : survey.getExternalId();
+        List<Article> articles = survey == null ? List.of() : articleRepository.findBySurveyLinks_Survey(survey);
+        int articleCount = articles == null ? 0 : articles.size();
         return new SurveyDto(
-                survey.getExternalId(),
-                survey.getTitle(),
-                survey.getDescription(),
-                safeDate(survey.getCreatedDate()),
-                survey.getStatus(),
-                articles.size()
+                extId,
+                survey != null && survey.getTitle() != null ? survey.getTitle() : "Untitled Survey",
+                survey != null ? survey.getDescription() : null,
+                survey != null ? safeDate(survey.getCreatedDate()) : null,
+                survey != null && survey.getStatus() != null ? survey.getStatus() : "Draft",
+                articleCount
         );
     }
 
@@ -1301,8 +1443,8 @@ public class SurveyServiceImpl implements SurveyService {
                 .findFirst()
                 .orElse(null);
         UserResponse owner = ownerReviewer == null
-                ? new UserResponse(null, "Survey Owner", "owner@example.com")
-                : new UserResponse(null, ownerReviewer.getName(), ownerReviewer.getEmail());
+                ? new UserResponse(-1L, "Survey Owner", "owner@example.com")
+                : new UserResponse(ownerReviewer.getReviewerId(), ownerReviewer.getName(), ownerReviewer.getEmail());
 
         return new SurveyDetailsDto(
                 survey.getExternalId(),

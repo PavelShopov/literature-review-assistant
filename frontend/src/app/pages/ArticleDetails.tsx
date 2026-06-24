@@ -48,7 +48,7 @@ export default function ArticleDetails() {
   };
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-gray-600">Loading article…</div>;
+    return <div className="flex min-h-screen items-center justify-center text-gray-600">Loading article...</div>;
   }
 
   if (error || !article) {
