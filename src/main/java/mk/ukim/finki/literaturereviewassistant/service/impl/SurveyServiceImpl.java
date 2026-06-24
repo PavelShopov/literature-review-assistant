@@ -148,13 +148,16 @@ public class SurveyServiceImpl implements SurveyService {
             survey.setResearchQuestion("Define the main research question for this survey.");
         }
 
-        // 3. Bind the owner profile before storing
-        ensureOwner(survey, authorizationHeader);
-
-        // 4. Save the completed entity structure
+        // 3. Persist the survey first so the owner association has a stable database identity
         Survey savedSurvey = surveyRepository.save(survey);
 
-        // 5. Explicitly break out early if it's a creation step to bypass proxy execution loops
+        // 4. Bind the owner profile after the survey exists in the database
+        ensureOwner(savedSurvey, authorizationHeader);
+
+        // 5. Flush the association update back to the database
+        savedSurvey = surveyRepository.save(savedSurvey);
+
+        // 6. Explicitly break out early if it's a creation step to bypass proxy execution loops
         if (isNew) {
             return new SurveyDto(
                     savedSurvey.getExternalId(),

@@ -2,81 +2,118 @@ package mk.ukim.finki.literaturereviewassistant.service.impl;
 
 import mk.ukim.finki.literaturereviewassistant.model.*;
 import mk.ukim.finki.literaturereviewassistant.repository.*;
-import mk.ukim.finki.literaturereviewassistant.service.DataService.BibTexParser;
-import mk.ukim.finki.literaturereviewassistant.service.DataService.PdfExtractorService;
-import mk.ukim.finki.literaturereviewassistant.service.OllamaService;
 import mk.ukim.finki.literaturereviewassistant.web.dto.*;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.*;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestClientException;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.client.ExpectedCount;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayOutputStream;
-import java.security.MessageDigest;
-import java.time.Instant;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+@SpringBootTest(properties = {
+        "spring.docker.compose.enabled=false",
+        "spring.datasource.url=jdbc:h2:mem:surveytest;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false",
+        "spring.datasource.driver-class-name=org.h2.Driver",
+        "spring.datasource.username=sa",
+        "spring.datasource.password=",
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.flyway.enabled=false",
+        "gemini.api.key=",
+        "nvidia.nim.api.key="
+})
+@Transactional
 class SurveyServiceImplImportTest {
-    private SurveyRepository surveyRepository;
-    private ArticleRepository articleRepository;
-    private AuthorRepository authorRepository;
-    private AuthSessionRepository authSessionRepository;
-    private DocumentRepository documentRepository;
-    private RestTemplate restTemplate;
+    @Autowired
     private SurveyServiceImpl service;
+
+    @Autowired
+    private SurveyRepository surveyRepository;
+
+    @Autowired
+    private ArticleRepository articleRepository;
+
+    @Autowired
+    private AuthorRepository authorRepository;
+
+    @Autowired
+    private AuthSessionRepository authSessionRepository;
+
+    @Autowired
+    private AppUserRepository appUserRepository;
+
+    @Autowired
+    private DocumentRepository documentRepository;
+
+    @Autowired
+    private ReviewerRepository reviewerRepository;
+
+    @Autowired
+    private RestTemplate restTemplate;
+
     private Survey survey;
     private Path storageDir;
+    private MockRestServiceServer restServer;
 
     @BeforeEach
     void setUp() throws Exception {
-        surveyRepository = mock(SurveyRepository.class);
-        articleRepository = mock(ArticleRepository.class);
-        authorRepository = mock(AuthorRepository.class);
-        authSessionRepository = mock(AuthSessionRepository.class);
-        documentRepository = mock(DocumentRepository.class);
-        ReviewerRepository reviewerRepository = mock(ReviewerRepository.class);
-        restTemplate = mock(RestTemplate.class);
-
-        service = new SurveyServiceImpl(
-                surveyRepository,
-                articleRepository,
-                authorRepository,
-                authSessionRepository,
-                documentRepository,
-                reviewerRepository,
-                new BibTexParser(),
-                new PdfExtractorService(),
-                mock(OllamaService.class),
-                restTemplate
-        );
         ReflectionTestUtils.setField(service, "maxPdfSize", 10_000_000L);
+
         storageDir = Files.createTempDirectory("paper-storage-test");
         ReflectionTestUtils.setField(service, "paperStorageDir", storageDir.toString());
 
+        restServer = MockRestServiceServer.bindTo(restTemplate).ignoreExpectOrder(true).build();
+
+        articleRepository.deleteAll();
+        documentRepository.deleteAll();
+        authorRepository.deleteAll();
+        authSessionRepository.deleteAll();
+        reviewerRepository.deleteAll();
+        surveyRepository.deleteAll();
+
         survey = new Survey();
-        survey.setSurveyId(1L);
         survey.setExternalId("survey-1");
-        when(surveyRepository.findByExternalId("survey-1")).thenReturn(Optional.of(survey));
-        when(articleRepository.save(any(Article.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(articleRepository.findByDoi(anyString())).thenReturn(Optional.empty());
-        when(articleRepository.findFirstByTitleIgnoreCaseAndPublicationYear(anyString(), anyInt()))
-                .thenReturn(Optional.empty());
-        when(documentRepository.findFirstByChecksumSha256(anyString())).thenReturn(Optional.empty());
-        when(authorRepository.findByAuthorName(anyString())).thenReturn(Optional.empty());
-        when(authorRepository.save(any(Author.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        doThrow(new RestClientException("offline")).when(restTemplate)
-                .exchange(any(java.net.URI.class), any(HttpMethod.class), any(HttpEntity.class), any(Class.class));
+        survey.setTitle("Test survey");
+        survey.setDescription("Description");
+        survey.setResearchQuestion("Question");
+        survey.setStatus("Draft");
+        surveyRepository.save(survey);
+    }
+
+    @AfterEach
+    void tearDown() throws Exception {
+        if (storageDir != null && Files.exists(storageDir)) {
+            try (var paths = Files.walk(storageDir)) {
+                paths.sorted((left, right) -> right.compareTo(left)).forEach(path -> {
+                    try {
+                        Files.deleteIfExists(path);
+                    } catch (Exception ignored) {
+                    }
+                });
+            }
+        }
     }
 
     @Test
@@ -88,12 +125,33 @@ class SurveyServiceImplImportTest {
 
     @Test
     void importsDoiOnlyAndKeepsNormalizedDoiWhenProviderIsUnavailable() {
+        String doi = "10.1000/example";
+        restServer.expect(requestTo(Matchers.containsString("api.crossref.org/works/" + doi)))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"message": {}}
+                        """, MediaType.APPLICATION_JSON));
+        restServer.expect(ExpectedCount.times(2), requestTo(Matchers.containsString("doi.org/" + doi)))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(request -> {
+                    String accept = request.getHeaders().getFirst(HttpHeaders.ACCEPT);
+                    if ("application/vnd.citationstyles.csl+json".equals(accept)) {
+                        return withSuccess("""
+                                {}
+                                """, MediaType.APPLICATION_JSON).createResponse(request);
+                    }
+                    return withSuccess("""
+                            <html><head><title>Example article</title></head><body></body></html>
+                            """, MediaType.TEXT_HTML).createResponse(request);
+                });
+
         ArticleDto result = service.importArticle(
                 "survey-1",
                 new ArticleImportRequest("url", "https://doi.org/10.1000/Example", addedBy(), null, null),
                 null
         );
 
+        restServer.verify();
         assertEquals("10.1000/example", result.doi());
         assertEquals("https://doi.org/10.1000/example", result.openUrl());
         assertEquals("doi", result.openType());
@@ -101,35 +159,50 @@ class SurveyServiceImplImportTest {
 
     @Test
     void importsTitleAuthorsAndPublicationMetadataFromCrossref() {
-        Map<String, Object> message = new HashMap<>();
-        message.put("DOI", "10.3390/app9245574");
-        message.put("title", List.of("Machine Learning for Quantitative Finance Applications: A Survey"));
-        message.put("container-title", List.of("Applied Sciences"));
-        message.put("URL", "https://doi.org/10.3390/app9245574");
-        message.put("author", List.of(
-                Map.of("given", "Francesco", "family", "Rundo"),
-                Map.of("given", "Francesca", "family", "Trenta")
-        ));
-        message.put("published-online", Map.of("date-parts", List.of(List.of(2019, 12, 17))));
-
-        when(restTemplate.exchange(
-                argThat((java.net.URI uri) -> uri.toString().contains("api.crossref.org/works/")),
-                eq(HttpMethod.GET),
-                any(HttpEntity.class),
-                eq(Map.class)
-        )).thenReturn(ResponseEntity.ok(Map.of("message", message)));
+        String doi = "10.3390/app9245574";
+        restServer.expect(requestTo(Matchers.containsString("api.crossref.org/works/" + doi)))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {
+                          "message": {
+                            "DOI": "10.3390/app9245574",
+                            "title": ["Machine Learning for Quantitative Finance Applications: A Survey"],
+                            "container-title": ["Applied Sciences"],
+                            "URL": "https://doi.org/10.3390/app9245574",
+                            "author": [
+                              {"given": "Francesco", "family": "Rundo"},
+                              {"given": "Francesca", "family": "Trenta"}
+                            ],
+                            "published-online": {"date-parts": [[2019, 12, 17]]}
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+        restServer.expect(ExpectedCount.times(2), requestTo(Matchers.containsString("doi.org/" + doi)))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(request -> {
+                    String accept = request.getHeaders().getFirst(HttpHeaders.ACCEPT);
+                    if ("application/vnd.citationstyles.csl+json".equals(accept)) {
+                        return withSuccess("""
+                                {}
+                                """, MediaType.APPLICATION_JSON).createResponse(request);
+                    }
+                    return withSuccess("""
+                            <html><head><title>Machine Learning for Quantitative Finance Applications: A Survey</title></head><body></body></html>
+                            """, MediaType.TEXT_HTML).createResponse(request);
+                });
 
         ArticleDto result = service.importArticle(
                 "survey-1",
-                new ArticleImportRequest("url", "10.3390/app9245574", addedBy(), null, null),
+                new ArticleImportRequest("url", doi, addedBy(), null, null),
                 null
         );
 
+        restServer.verify();
         assertEquals("Machine Learning for Quantitative Finance Applications: A Survey", result.title());
         assertEquals(List.of("Rundo, Francesco", "Trenta, Francesca"), result.authors());
         assertEquals("Applied Sciences", result.journal());
         assertEquals(2019, result.year());
-        assertEquals("10.3390/app9245574", result.doi());
+        assertEquals(doi, result.doi());
     }
 
     @Test
@@ -151,7 +224,7 @@ class SurveyServiceImplImportTest {
         assertEquals("pdf", result.openType());
         assertTrue(result.openUrl().endsWith("/pdf"));
 
-        Article saved = captureSavedArticle();
+        Article saved = articleRepository.findByExternalId(result.id()).orElseThrow();
         Document document = saved.getDocuments().get(0);
         assertNotNull(document.getFilePath());
         assertTrue(Files.exists(storageDir.resolve(document.getFilePath())));
@@ -165,7 +238,7 @@ class SurveyServiceImplImportTest {
         Article existing = article("article-existing", "10.1000/example");
         existing.setTitle("Imported article for 10 1000 example");
         existing.setPublicationYear(java.time.LocalDate.now().getYear());
-        when(articleRepository.findByDoi("10.1000/example")).thenReturn(Optional.of(existing));
+        articleRepository.save(existing);
 
         ArticleDto result = service.importArticle(
                 "survey-1",
@@ -180,7 +253,7 @@ class SurveyServiceImplImportTest {
         );
 
         assertEquals("article-existing", result.id());
-        assertEquals(1, existing.getSurveyLinks().size());
+        assertEquals(1, articleRepository.findByExternalId("article-existing").orElseThrow().getSurveyLinks().size());
         assertEquals("Existing", result.title());
         assertEquals(2024, result.year());
     }
@@ -189,13 +262,13 @@ class SurveyServiceImplImportTest {
     void returnsExistingArticleForDuplicatePdfChecksum() throws Exception {
         byte[] pdf = validPdf();
         Article existing = article("article-existing", null);
+        articleRepository.save(existing);
+
         Document existingDocument = new Document();
         existingDocument.setArticle(existing);
-        existingDocument.setChecksumSha256(HexFormat.of().formatHex(
-                MessageDigest.getInstance("SHA-256").digest(pdf)
-        ));
-        when(documentRepository.findFirstByChecksumSha256(existingDocument.getChecksumSha256()))
-                .thenReturn(Optional.of(existingDocument));
+        existingDocument.setType(DocumentType.PDF);
+        existingDocument.setChecksumSha256(hexSha256(pdf));
+        documentRepository.save(existingDocument);
 
         ArticleDto result = service.importArticle(
                 "survey-1",
@@ -259,7 +332,7 @@ class SurveyServiceImplImportTest {
     @Test
     void pdfDownloadRequiresAuthenticationAndReturnsStoredBytesForAdmin() throws Exception {
         Article article = article("article-1", null);
-        when(articleRepository.findByExternalId("article-1")).thenReturn(Optional.of(article));
+        articleRepository.save(article);
 
         assertThrows(ResponseStatusException.class, () -> service.findArticlePdf("article-1", null));
 
@@ -267,18 +340,46 @@ class SurveyServiceImplImportTest {
         Document document = new Document();
         document.setFilePath("legacy.pdf");
         Files.write(storageDir.resolve("legacy.pdf"), bytes);
+        document.setType(DocumentType.PDF);
         document.setMimeType(MediaType.APPLICATION_PDF_VALUE);
         document.setOriginalFileName("paper.pdf");
-        when(documentRepository.findFirstByArticleExternalIdAndTypeAndFilePathIsNotNull(
-                "article-1", DocumentType.PDF
-        )).thenReturn(Optional.of(document));
-        AppUser admin = new AppUser(1L, "Admin", "admin@example.com", "hash", "ADMIN");
-        when(authSessionRepository.findByToken("token"))
-                .thenReturn(Optional.of(new AuthSession(1L, "token", Instant.now(), admin)));
+        document.setArticle(article);
+        documentRepository.save(document);
+
+        AppUser admin = new AppUser(null, "Admin", "admin@example.com", "hash", "ADMIN");
+        admin = appUserRepository.save(admin);
+        AuthSession session = new AuthSession(null, "token", Instant.now(), admin);
+        authSessionRepository.save(session);
 
         PdfDownload download = service.findArticlePdf("article-1", "Bearer token");
         assertArrayEquals(bytes, download.content());
         assertEquals("paper.pdf", download.fileName());
+    }
+
+    @Test
+    void createsSurveyAndMakesItVisibleToTheOwner() {
+        AppUser owner = appUserRepository.save(new AppUser(null, "Owner", "owner@test.com", "hash", "USER"));
+        authSessionRepository.save(new AuthSession(null, "owner-token", Instant.now(), owner));
+
+        SurveyDto created = service.saveSurvey(
+                "survey-temp-1",
+                new SurveyRequest(
+                        "survey-temp-1",
+                        "Created survey",
+                        "Created from test",
+                        null,
+                        "Draft",
+                        0,
+                        "Research question"
+                ),
+                "Bearer owner-token"
+        );
+
+        assertNotNull(created.id());
+        assertEquals("Created survey", created.name());
+
+        List<SurveyDto> surveys = service.findAllSurveys("Bearer owner-token");
+        assertTrue(surveys.stream().anyMatch(survey -> survey.id().equals(created.id())));
     }
 
     private AddedByDto addedBy() {
@@ -307,9 +408,7 @@ class SurveyServiceImplImportTest {
         }
     }
 
-    private Article captureSavedArticle() {
-        var captor = org.mockito.ArgumentCaptor.forClass(Article.class);
-        verify(articleRepository, atLeastOnce()).save(captor.capture());
-        return captor.getAllValues().get(captor.getAllValues().size() - 1);
+    private String hexSha256(byte[] bytes) throws Exception {
+        return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
     }
 }
