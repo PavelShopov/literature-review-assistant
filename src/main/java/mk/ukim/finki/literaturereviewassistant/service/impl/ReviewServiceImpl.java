@@ -71,7 +71,8 @@ public class ReviewServiceImpl implements ReviewService {
         if (!belongs) {
             return null;
         }
-        Review review = new Review();
+        
+        Review review = reviewRepository.findByReviewerAndArticle(reviewer, article).orElse(new Review());
         review.setJsonResponse(request.getJsonResponse());
         review.setArticle(article);
         review.setReviewer(reviewer);
@@ -106,26 +107,86 @@ public class ReviewServiceImpl implements ReviewService {
                 }
 
                 // Include this survey only if there are pending (unreviewed) articles
-                if (survey.getArticleLinks() == null || survey.getArticleLinks().isEmpty()) {
-                    continue;
-                }
+//                if (survey.getArticleLinks() == null || survey.getArticleLinks().isEmpty()) {
+//                    continue;
+//                }
                 List<Review> reviews = reviewRepository.findByReviewer(reviewer);
                 Set<Long> reviewedArticleIds = reviews.stream()
                         .map(r -> r.getArticle().getArticleId())
                         .collect(Collectors.toSet());
-                boolean hasPending = survey.getArticleLinks().stream()
-                        .anyMatch(as -> !reviewedArticleIds.contains(as.getArticle().getArticleId()));
-                if (hasPending) {
-                    surveysToReview.add(toSurveyDto(survey));
-                }
+//                boolean hasPending = survey.getArticleLinks().stream()
+//                        .anyMatch(as -> !reviewedArticleIds.contains(as.getArticle().getArticleId()));
+//                if (hasPending) {
+//                }
+                surveysToReview.add(toSurveyDto(survey));
             }
         }
         return surveysToReview;
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<ReviewableArticleDto> getArticlesForReview(String authorizationHeader, String surveyId) {
-        return List.of();
+        UserResponse user = authService.me(authorizationHeader);
+        if (user == null || user.email() == null) {
+            return List.of();
+        }
+        Survey survey = surveyRepository.findByExternalId(surveyId).orElse(null);
+        if (survey == null) {
+            return List.of();
+        }
+        Reviewer reviewer = reviewerRepository.findByEmail(user.email()).stream()
+                .filter(r -> r.getSurveys().contains(survey) && "Reviewer".equals(r.getRole()))
+                .findFirst()
+                .orElse(null);
+        if (reviewer == null) {
+            return List.of();
+        }
+
+        List<ReviewableArticleDto> dtos = new ArrayList<>();
+        List<Review> userReviews = reviewRepository.findByReviewer(reviewer);
+
+        if (survey.getArticleLinks() != null) {
+            for (var link : survey.getArticleLinks()) {
+                Article article = link.getArticle();
+                if (article != null) {
+                    // Filter out articles added by the Owner so reviewers cannot touch them
+                    if ("Owner".equals(article.getAddedByRole())) {
+                        continue;
+                    }
+
+                    Review existingReview = userReviews.stream()
+                            .filter(r -> r.getArticle().getArticleId().equals(article.getArticleId()))
+                            .findFirst()
+                            .orElse(null);
+
+                    List<mk.ukim.finki.literaturereviewassistant.web.dto.AIAnnotationDto> aiAnnotations = new ArrayList<>();
+                    if (article.getAnnotationResults() != null) {
+                        for (mk.ukim.finki.literaturereviewassistant.model.AnnotationResult res : article.getAnnotationResults()) {
+                            String promptText = res.getPrompt() != null ? res.getPrompt().getPromptText() : "Unknown Prompt";
+                            aiAnnotations.add(new mk.ukim.finki.literaturereviewassistant.web.dto.AIAnnotationDto(promptText, res.getJsonResponse()));
+                        }
+                    }
+
+                    dtos.add(new ReviewableArticleDto(
+                            article.getExternalId(),
+                            article.getTitle(),
+                            article.getJournal(),
+                            article.getPublicationYear(),
+                            article.getDoi(),
+                            article.getUrl(),
+                            article.getStatus(),
+                            article.getArticleAbstract(),
+                            article.getInclusionSummary(),
+                            article.getAuthors().stream().map(a -> a.getAuthorName()).toList(),
+                            existingReview != null,
+                            existingReview != null ? existingReview.getJsonResponse() : null,
+                            aiAnnotations
+                    ));
+                }
+            }
+        }
+        return dtos;
     }
 
     private SurveyDto toSurveyDto(Survey survey) {

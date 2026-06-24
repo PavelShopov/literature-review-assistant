@@ -131,11 +131,11 @@ public class SurveyServiceImpl implements SurveyService {
             survey.setResearchQuestion("Define the main research question for this survey.");
         }
 
-        // 3. Bind the owner profile before storing
-        ensureOwner(survey, authorizationHeader);
-
-        // 4. Save the completed entity structure
+        // 3. Save the survey FIRST so it gets an ID and avoids TransientObjectException
         Survey savedSurvey = surveyRepository.save(survey);
+
+        // 4. Bind the owner profile using the persisted survey
+        ensureOwner(savedSurvey, authorizationHeader);
 
         // 5. Explicitly break out early if it's a creation step to bypass proxy execution loops
         if (isNew) {
@@ -1056,44 +1056,15 @@ public class SurveyServiceImpl implements SurveyService {
         if (currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)) {
             return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
         }
-        // For non-admin users: only show surveys where they are the Owner.
-        // Surveys they are assigned to review (Reviewer role) are available via /api/reviews/surveys.
         return surveyRepository.findAll().stream()
                 .filter(survey -> survey.getReviewers().stream()
-                        .anyMatch(contributor ->
-                                contributor.getEmail().equals(currentUser.get().getEmail())
+                        .anyMatch(contributor -> contributor.getEmail() != null 
+                                && currentUser.get().getEmail() != null 
+                                && contributor.getEmail().equalsIgnoreCase(currentUser.get().getEmail())
                                 && "Owner".equals(contributor.getRole())))
                 .map(this::toSurveyDto)
                 .toList();
     }
-
-//    @Override
-//    @Transactional(readOnly = true)
-//    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
-//        Optional<AppUser> currentUser = currentUser(authorizationHeader);
-//        if (currentUser.isEmpty()) {
-//            return List.of();
-//        }
-//
-//        AppUser user = currentUser.get();
-//        if ("ADMIN".equals(user.getRole())) {
-//            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
-//        }
-//// <<<<<<< sandbox_combined
-//
-//        return surveyRepository.findAll().stream()
-//                .filter(survey -> survey.getReviewers().stream()
-//                        .anyMatch(contributor -> contributor.getEmail() != null
-//                                && user.getEmail() != null
-//                                && contributor.getEmail().equalsIgnoreCase(user.getEmail())))
-    //// =======
-    ////         return surveyRepository.findAll().stream()
-    ////                 .filter(survey -> survey.getReviewers().stream()
-    ////                         .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
-    //// >>>>>>> sandbox_branch
-//                .map(this::toSurveyDto)
-//                .toList();
-//    }
     private void ensureOwner(Survey survey, String authorizationHeader) {
         Optional<AppUser> currentUserOpt = currentUser(authorizationHeader);
 

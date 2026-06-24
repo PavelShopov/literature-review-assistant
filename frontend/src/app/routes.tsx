@@ -5,6 +5,7 @@ import SurveyDetailsPage from "./pages/SurveyDetailsPage";
 import EditArticlePage from "./pages/EditArticlePage";
 import ArticleDetailsPage from "./pages/ArticleDetails";
 import AuthPage from "./pages/AuthPage";
+import ReviewSurveyPage from "./pages/ReviewSurveyPage";
 import { RequireAuth } from "./auth/RequireAuth";
 
 export const router = createBrowserRouter([
@@ -30,6 +31,10 @@ export const router = createBrowserRouter([
       {
         path: "/surveys/to-review",
         Component: SurveysToReviewPage,
+      },
+      {
+        path: "/surveys/to-review/:surveyId/review",
+        Component: ReviewSurveyPage,
       },
       {
         path: "/survey/:surveyId",

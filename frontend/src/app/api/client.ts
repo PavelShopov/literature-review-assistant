@@ -446,3 +446,36 @@ export function removeContributor(surveyId: string, contributorId: string): Prom
 export function getSurveysToReview(): Promise<Survey[]> {
   return request<Survey[]>("/api/reviews/surveys");
 }
+
+export type AIAnnotation = {
+  promptText: string;
+  jsonResponse: string;
+};
+
+export type ReviewableArticle = {
+  externalId: string;
+  title: string;
+  journal: string;
+  publicationYear: number;
+  doi: string;
+  url: string;
+  status: string;
+  articleAbstract: string;
+  inclusionSummary: string;
+  authors: string[];
+  reviewed: boolean;
+  jsonResponse: string | null;
+  aiAnnotations: AIAnnotation[];
+};
+
+export function getArticlesToReview(surveyId: string): Promise<ReviewableArticle[]> {
+  return request<ReviewableArticle[]>(`/api/reviews/surveys/${surveyId}/articles`);
+}
+
+export function submitArticleReview(surveyId: string, articleId: string, jsonResponse: string): Promise<void> {
+  return request<void>(`/api/reviews/surveys/${surveyId}/articles/${articleId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonResponse }),
+  });
+}
