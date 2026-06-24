@@ -51,6 +51,14 @@ public class ReviewServiceImpl implements ReviewService {
 
         List<SurveyDto> surveysToReview = new ArrayList<>();
         for (Survey survey : reviewer.getSurveys()) {
+            // Only include surveys where the user is a Reviewer (not Owner)
+            boolean isReviewerRole = survey.getReviewers().stream()
+                    .anyMatch(r -> r.getEmail().equals(reviewer.getEmail())
+                            && "Reviewer".equals(r.getRole()));
+            if (!isReviewerRole) {
+                continue;
+            }
+
             if (survey.getArticleLinks() == null || survey.getArticleLinks().isEmpty()) {
                 continue;
             }

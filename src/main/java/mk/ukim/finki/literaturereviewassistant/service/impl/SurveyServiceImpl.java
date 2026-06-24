@@ -89,15 +89,32 @@ public class SurveyServiceImpl implements SurveyService {
     @Transactional(readOnly = true)
     public List<SurveyDto> findAllSurveys(String authorizationHeader) {
         Optional<AppUser> currentUser = currentUser(authorizationHeader);
-        if(currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)){
+        if (currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)) {
             return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
         }
+        // For non-admin users: only show surveys where they are the Owner.
+        // Surveys they are assigned to review (Reviewer role) are available via /api/reviews/surveys.
         return surveyRepository.findAll().stream()
                 .filter(survey -> survey.getReviewers().stream()
-                        .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
+                        .anyMatch(contributor ->
+                                contributor.getEmail().equals(currentUser.get().getEmail())
+                                && "Owner".equals(contributor.getRole())))
                 .map(this::toSurveyDto)
                 .toList();
     }
+//    @Override
+//    @Transactional(readOnly = true)
+//    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
+//        Optional<AppUser> currentUser = currentUser(authorizationHeader);
+//        if(currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)){
+//            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
+//        }
+//        return surveyRepository.findAll().stream()
+//                .filter(survey -> survey.getReviewers().stream()
+//                        .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
+//                .map(this::toSurveyDto)
+//                .toList();
+//    }
 
     @Override
     @Transactional(readOnly = true)
