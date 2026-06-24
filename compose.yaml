@@ -22,7 +22,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/literature_db
       PAPER_IMPORT_STORAGE_DIR: /app/storage/pdfs
-
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
 volumes:
   postgres_data:
   uploads_data:
