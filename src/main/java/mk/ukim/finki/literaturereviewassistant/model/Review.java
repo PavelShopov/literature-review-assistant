@@ -18,7 +18,7 @@ public class Review {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long ReviewId;
+    private Long reviewId;
 
     @Column(columnDefinition = "TEXT")
     private String jsonResponse;
@@ -29,5 +29,5 @@ public class Review {
 
     @ManyToOne
     @JoinColumn(name = "Reviewer_id")
-    private Reviewer Reviewer;
+    private Reviewer reviewer;
 }
