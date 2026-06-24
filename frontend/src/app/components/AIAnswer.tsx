@@ -47,7 +47,15 @@ export function AIAnswer({ question, answer, sourceCount, confidence = 85 }: AIA
         {/* Metadata */}
         <div className="mt-6 pt-4 border-t border-gray-100">
           <p className="text-xs text-gray-500">
-            Based on <span className="font-medium text-gray-700">{sourceCount} sources</span> from your uploaded articles
+            {sourceCount > 0 ? (
+              <>
+                Based on <span className="font-medium text-gray-700">{sourceCount} sources</span> from your survey database
+              </>
+            ) : (
+              <>
+                No survey database sources found. This answer is based on model knowledge only.
+              </>
+            )}
           </p>
         </div>
       </div>

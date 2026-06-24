@@ -17,12 +17,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
 import java.util.*;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class ArticleServiceImpl implements ArticleService{
+
+    private final DocumentFileServiceImpl documentFileService;
 
     private final ArticleRepository articleRepository;
     private final AuthorRepository authorRepository;
@@ -113,9 +116,9 @@ public class ArticleServiceImpl implements ArticleService{
 
             Article saved = articleRepository.save(article);
 
-            if (meta.getPdfBytes() != null) {
-                attachDocument(saved, meta.getPdfBytes(), DocumentType.PDF);
-            }
+//            if (meta.getPdfBytes() != null) {
+//                attachDocument(saved, meta.getPdfBytes(), DocumentType.PDF);
+//            }
             return saved;
         });
     }
@@ -147,7 +150,11 @@ public class ArticleServiceImpl implements ArticleService{
 
         Article saved = articleRepository.save(article);
 
-        attachDocument(saved, bytes, DocumentType.PDF);
+        try {
+            attachDocument(saved, pdfFile, DocumentType.PDF);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         return saved;
     }
 
@@ -189,8 +196,17 @@ public class ArticleServiceImpl implements ArticleService{
         Article article = getArticleOrThrow(articleId);
         Survey survey  = getSurveyOrThrow(surveyId);
 
-        if (!article.getSurveys().contains(survey)) {
-            article.getSurveys().add(survey);
+        // Check if the link already exists via the bridge entity
+        boolean alreadyLinked = article.getSurveyLinks().stream()
+                .anyMatch(link -> link.getSurvey().getSurveyId().equals(surveyId));
+
+        if (!alreadyLinked) {
+            ArticleSurvey bridgeLink = new ArticleSurvey();
+            bridgeLink.setSurvey(survey);
+            bridgeLink.setArticle(article);
+            bridgeLink.setStatus(ArticleStatus.PENDING); // Or whichever default status your enum has
+
+            article.getSurveyLinks().add(bridgeLink);
         }
         return articleRepository.save(article);
     }
@@ -198,9 +214,10 @@ public class ArticleServiceImpl implements ArticleService{
     @Override
     public Article removeFromSurvey(Long articleId, Long surveyId) {
         Article article = getArticleOrThrow(articleId);
-        Survey  survey  = getSurveyOrThrow(surveyId);
 
-        article.getSurveys().remove(survey);
+        // Remove the bridge relation from the collection
+        article.getSurveyLinks().removeIf(link -> link.getSurvey().getSurveyId().equals(surveyId));
+
         return articleRepository.save(article);
     }
 
@@ -208,15 +225,17 @@ public class ArticleServiceImpl implements ArticleService{
     @Transactional(readOnly = true)
     public List<Article> findBySurvey(Long surveyId) {
         Survey survey = getSurveyOrThrow(surveyId);
-        return articleRepository.findBySurveysContaining(survey);
+        // Extract articles out from the survey's bridge links
+        return survey.getArticleLinks().stream()
+                .map(ArticleSurvey::getArticle)
+                .toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<Article> searchInSurvey(Long surveyId, String keyword) {
-        Survey survey = getSurveyOrThrow(surveyId);
         String kw = keyword.toLowerCase();
-        return articleRepository.findBySurveysContaining(survey).stream()
+        return findBySurvey(surveyId).stream()
                 .filter(a -> (a.getTitle() != null && a.getTitle().toLowerCase().contains(kw))
                         || (a.getArticleAbstract() != null && a.getArticleAbstract().toLowerCase().contains(kw)))
                 .toList();
@@ -370,10 +389,14 @@ public class ArticleServiceImpl implements ArticleService{
     /**
      * Create and persist a Document entity linked to the given article.
      */
-    private void attachDocument(Article article, byte[] content, DocumentType type) {
+    private void attachDocument(Article article, MultipartFile file, DocumentType type) throws IOException {
         Document doc = new Document();
         doc.setArticle(article);
         doc.setType(type);
+        String fileName = documentFileService.uploadFile(file);
+        doc.setFilePath(fileName);
+        doc.setTitle(file.getOriginalFilename());
+
 //        doc.setContent(content);
 //        doc.setExtractedText(pdfExtractorService.extractText(content));
         documentRepository.save(doc);

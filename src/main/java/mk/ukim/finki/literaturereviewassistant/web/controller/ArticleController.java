@@ -3,8 +3,13 @@ package mk.ukim.finki.literaturereviewassistant.web.controller;
 import mk.ukim.finki.literaturereviewassistant.model.Article;
 import mk.ukim.finki.literaturereviewassistant.model.Author;
 import mk.ukim.finki.literaturereviewassistant.service.ArticleService;
+import mk.ukim.finki.literaturereviewassistant.service.GemmaService;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,10 +24,12 @@ public class ArticleController {
     @Autowired
     private ArticleService articleService;
 
+    @Autowired
+    private GemmaService gemmaService;
+
     // ─── CRUD ────────────────────────────────────────────────────────────────
     @GetMapping
     public List<Article> getAll() {
-        // Mock implementation – returns empty list or service result if available
         return articleService.findAll();
     }
 
@@ -91,7 +98,6 @@ public class ArticleController {
     // ─── Author Management ───────────────────────────────────────────────────
     @GetMapping("/{articleId}/authors")
     public List<Author> getAuthors(@PathVariable Long articleId) {
-        // Returns a list of author DTOs – using generic Map for mock simplicity
         return articleService.findAuthorsByArticle(articleId);
     }
 
@@ -111,5 +117,35 @@ public class ArticleController {
                                         @RequestParam Long promptId,
                                         @RequestParam(defaultValue = "false") boolean useFullText) {
         return articleService.annotate(articleId, promptId, useFullText);
+    }
+
+    @PostMapping("/{articleId}/analyze-gemma")
+    public ResponseEntity<String> analyzeWithGemma(
+            @PathVariable Long articleId,
+            @RequestBody Map<String, String> requestPayload) {
+
+        String prompt = requestPayload.get("prompt");
+        if (prompt == null || prompt.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .body("{\"error\": \"The 'prompt' property is required.\"}");
+        }
+
+        // Invoke the client utility method connected to NVIDIA NIM API
+        String rawGemmaResponse = gemmaService.callGemma(prompt);
+
+        // Clean out raw markdown wrapper structures before passing back down
+        String cleanJson = rawGemmaResponse.trim();
+        if (cleanJson.startsWith("```")) {
+            cleanJson = cleanJson.replaceAll("^```(?:json)?\\s*", "");
+        }
+        if (cleanJson.endsWith("```")) {
+            cleanJson = cleanJson.substring(0, cleanJson.length() - 3).trim();
+        }
+
+        // Write the cleaned JSON directly as a raw String response body with JSON Content-Type headers
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .body(cleanJson);
     }
 }

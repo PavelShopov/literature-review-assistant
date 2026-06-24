@@ -38,7 +38,7 @@ export function ReferencesList({
   const [summaries, setSummaries] = useState<Record<string, string>>({});
 
   const handleViewArticle = (referenceId: string) => {
-    navigate(`/survey/${surveyId}/articles`);
+    navigate(`/survey/${surveyId}/articles/${referenceId}/view`);
   };
 
   const handleAddToSurvey = (referenceId: string) => {
@@ -161,7 +161,7 @@ export function ReferencesList({
             {/* Source Label */}
             <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-4">
               <FileText className="w-3.5 h-3.5" />
-              <span>Source: Uploaded PDF</span>
+              <span>Source: Survey article</span>
             </div>
 
             {/* Action Buttons */}

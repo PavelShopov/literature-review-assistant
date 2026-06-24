@@ -178,26 +178,26 @@ export const mockArticles: Article[] = [
   },
 ];
 
-export const mockContributors: Contributor[] = [
-  {
-    id: "owner",
-    name: "Survey Owner",
-    email: "owner@example.com",
-    role: "Owner",
-    addedDate: "2024-03-15T09:00:00.000Z",
-  },
-  {
-    id: "reviewer-1",
-    name: "Ana Petrova",
-    email: "ana.petrova@example.com",
-    role: "Reviewer",
-    addedDate: "2024-03-18T13:30:00.000Z",
-  },
-  {
-    id: "reviewer-2",
-    name: "Mark Johnson",
-    email: "mark.johnson@example.com",
-    role: "Reviewer",
-    addedDate: "2024-03-20T10:15:00.000Z",
-  },
-];
+// export const mockContributors: Contributor[] = [
+//   {
+//     id: "owner",
+//     name: "Survey Owner",
+//     email: "owner@example.com",
+//     role: "Owner",
+//     addedDate: "2024-03-15T09:00:00.000Z",
+//   },
+//   {
+//     id: "reviewer-1",
+//     name: "Ana Petrova",
+//     email: "ana.petrova@example.com",
+//     role: "Reviewer",
+//     addedDate: "2024-03-18T13:30:00.000Z",
+//   },
+//   {
+//     id: "reviewer-2",
+//     name: "Mark Johnson",
+//     email: "mark.johnson@example.com",
+//     role: "Reviewer",
+//     addedDate: "2024-03-20T10:15:00.000Z",
+//   },
+// ];

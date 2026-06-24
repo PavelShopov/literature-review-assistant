@@ -48,7 +48,7 @@ export function AskInput({ onAsk, isLoading }: AskInputProps) {
         />
         <div className="flex items-center justify-between">
           <p className="text-xs text-gray-500">
-            💡 Answers are generated from your uploaded PDFs only
+            💡 Answers use your survey context when relevant
           </p>
           <button
             onClick={handleSubmit}
