@@ -29,9 +29,9 @@ public class Reviewer {
     private String role;
     private Instant addedDate;
 
-    @OneToOne(cascade = {CascadeType.MERGE, CascadeType.REFRESH})
-    @JoinColumn(name = "AppUser_id")
-    private AppUser AppUser;
+    @ManyToOne(cascade = {CascadeType.MERGE, CascadeType.REFRESH})
+    @JoinColumn(name = "app_user_id")
+    private AppUser appUser;
 
     @ManyToMany(cascade = {CascadeType.MERGE})
     @JoinTable(
@@ -41,6 +41,6 @@ public class Reviewer {
     )
     private List<Survey> surveys = new ArrayList<>();
 
-    @OneToMany(mappedBy = "Reviewer", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "reviewer", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Review> reviews;
 }

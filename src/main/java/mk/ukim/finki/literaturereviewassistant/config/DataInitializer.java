@@ -40,11 +40,9 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (surveyRepository.count() > 0) {
-            return;
-        }
-
         String adminEmail = "admin@finki.ukim.mk";
+
+
 
         if (!userRepository.existsByEmailIgnoreCase(adminEmail)) {
 
@@ -55,8 +53,59 @@ public class DataInitializer implements CommandLineRunner {
                     passwordEncoder.encode("SecureAdminPassword123!"),
                     "ADMIN"
             );
-
             userRepository.save(admin);
+            System.out.println("Creating admin user with email: " + adminEmail);
+        } else {
+            // Update password just in case it was changed during development
+            userRepository.findByEmailIgnoreCase(adminEmail).ifPresent(admin -> {
+                admin.setPasswordHash(passwordEncoder.encode("SecureAdminPassword123!"));
+                userRepository.save(admin);
+            });
+        }
+        // ── Owner ─────────────────────────────────────────────────────────────────
+        String ownerEmail = "owner@finki.ukim.mk";
+        if (!userRepository.existsByEmailIgnoreCase(ownerEmail)) {
+            AppUser owner = new AppUser(null, "Survey Owner", ownerEmail,
+                    passwordEncoder.encode("Owner123!"), "USER");
+            userRepository.save(owner);
+        } else {
+            userRepository.findByEmailIgnoreCase(ownerEmail).ifPresent(owner -> {
+                owner.setPasswordHash(passwordEncoder.encode("Owner123!"));
+                userRepository.save(owner);
+            });
+        }
+
+        // ── Reviewer 1 ────────────────────────────────────────────────────────────
+        String anaEmail = "ana@finki.ukim.mk";
+        if (!userRepository.existsByEmailIgnoreCase(anaEmail)) {
+            AppUser ana = new AppUser(null, "Ana Petrova", anaEmail,
+                    passwordEncoder.encode("Reviewer123!"), "USER");
+            userRepository.save(ana);
+        } else {
+            userRepository.findByEmailIgnoreCase(anaEmail).ifPresent(ana -> {
+                ana.setPasswordHash(passwordEncoder.encode("Reviewer123!"));
+                userRepository.save(ana);
+            });
+        }
+
+        // ── Reviewer 2 ────────────────────────────────────────────────────────────
+        String markEmail = "mark@finki.ukim.mk";
+        if (!userRepository.existsByEmailIgnoreCase(markEmail)) {
+            AppUser mark = new AppUser(null, "Mark Johnson", markEmail,
+                    passwordEncoder.encode("Reviewer123!"), "USER");
+            userRepository.save(mark);
+        } else {
+            userRepository.findByEmailIgnoreCase(markEmail).ifPresent(mark -> {
+                mark.setPasswordHash(passwordEncoder.encode("Reviewer123!"));
+                userRepository.save(mark);
+            });
+        }
+
+        if (surveyRepository.count() > 0) {
+            return;
+        }
+        if (surveyRepository.count() > 0) {
+            return;
         }
 
         Survey healthcare = createSurvey(
@@ -88,9 +137,14 @@ public class DataInitializer implements CommandLineRunner {
 
         surveyRepository.saveAll(List.of(healthcare, climate, remoteWork));
 
-        addDefaultReviewers(healthcare);
-        addDefaultReviewers(climate);
-        addDefaultReviewers(remoteWork);
+//        AppUser ownerUser = createMockUser("Survey Owner", "owner@example.com", "USER");
+//        AppUser anaUser = createMockUser("Ana Petrova", "ana.petrova@example.com", "USER");
+//        AppUser markUser = createMockUser("Mark Johnson", "mark.johnson@example.com", "USER");
+        AppUser ownerUser = userRepository.findByEmailIgnoreCase("owner@finki.ukim.mk").orElseThrow();
+        AppUser anaUser   = userRepository.findByEmailIgnoreCase("ana@finki.ukim.mk").orElseThrow();
+        AppUser markUser  = userRepository.findByEmailIgnoreCase("mark@finki.ukim.mk").orElseThrow();
+
+        addDefaultReviewers(List.of(healthcare, climate, remoteWork), ownerUser, anaUser, markUser);
 
         createArticle(healthcare, "1", "Deep Learning Applications in Medical Image Analysis: A Systematic Review",
                 List.of("Smith, J.", "Johnson, A.", "Williams, B."), "Journal of Medical Imaging", 2024,
@@ -105,7 +159,7 @@ public class DataInitializer implements CommandLineRunner {
         createArticle(healthcare, "3", "Ethical Considerations in AI-Driven Clinical Decision Support Systems",
                 List.of("Kumar, R.", "Thompson, E.", "Lee, S.", "Davis, K."), "The Lancet Digital Health", 2024,
                 "10.1016/s2589-7500(24)00012-3", "INCLUDED",
-                "This paper explores the ethical implications of deploying AI-driven clinical decision support systems.",
+                "This paper explores the ethical implications of dep    loying AI-driven clinical decision support systems.",
                 "reviewer-2", "Mark Johnson", "Reviewer");
     }
 
@@ -120,38 +174,52 @@ public class DataInitializer implements CommandLineRunner {
         return survey;
     }
 
-    private void addDefaultReviewers(Survey survey) {
+//    private AppUser createMockUser(String name, String email, String role) {
+//        if (!userRepository.existsByEmailIgnoreCase(email)) {
+//            AppUser user = new AppUser(
+//                    null,
+//                    name,
+//                    email,
+//                    passwordEncoder.encode("Password123!"),
+//                    role
+//            );
+//            return userRepository.save(user);
+//        }
+//        return userRepository.findByEmailIgnoreCase(email).orElseThrow();
+//    }
+
+    private void addDefaultReviewers(List<Survey> surveys, AppUser ownerUser, AppUser anaUser, AppUser markUser) {
         // 1. Create the Owner
         Reviewer owner = new Reviewer();
         owner.setExternalId("owner");
         owner.setName("Survey Owner");
-        owner.setEmail("owner@example.com");
+        owner.setEmail("owner@finki.ukim.mk");
         owner.setRole("Owner");
         owner.setAddedDate(Instant.now());
-        owner.setSurveys(new ArrayList<>());
-        owner.getSurveys().add(survey);
+        owner.setSurveys(new ArrayList<>(surveys));
+        owner.setAppUser(ownerUser);
         reviewerRepository.save(owner);
 
         // 2. Create Default Reviewer 1
         Reviewer reviewer1 = new Reviewer();
         reviewer1.setExternalId("reviewer-1");
         reviewer1.setName("Ana Petrova");
-        reviewer1.setEmail("ana.petrova@example.com");
+        reviewer1.setEmail("ana@finki.ukim.mk");
         reviewer1.setRole("Reviewer");
         reviewer1.setAddedDate(Instant.now());
-        reviewer1.setSurveys(new ArrayList<>());
-        reviewer1.getSurveys().add(survey);
+        reviewer1.setSurveys(new ArrayList<>(surveys));
+        reviewer1.setAppUser(anaUser);
         reviewerRepository.save(reviewer1);
 
         // 3. Create Default Reviewer 2
         Reviewer reviewer2 = new Reviewer();
         reviewer2.setExternalId("reviewer-2");
         reviewer2.setName("Mark Johnson");
-        reviewer2.setEmail("mark.johnson@example.com");
+        reviewer2.setEmail("mark@finki.ukim.mk");
         reviewer2.setRole("Reviewer");
         reviewer2.setAddedDate(Instant.now());
-        reviewer2.setSurveys(new ArrayList<>());
-        reviewer2.getSurveys().add(survey);
+        reviewer2.setSurveys(new ArrayList<>(surveys));
+        reviewer2.setAppUser(markUser);
         reviewerRepository.save(reviewer2);
     }
 

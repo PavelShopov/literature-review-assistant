@@ -21,11 +21,13 @@ public interface SurveyService {
 
     SurveyDetailsDto findSurvey(String surveyId);
 
+
     SurveyDto saveSurvey(String surveyId, SurveyRequest request, String authorizationHeader);
 
     void deleteSurvey(String surveyId);
 
     List<ArticleDto> findArticles(String surveyId);
+
 
     ArticleDto findArticle(String articleId);
 

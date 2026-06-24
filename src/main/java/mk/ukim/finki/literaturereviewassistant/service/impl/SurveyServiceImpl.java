@@ -89,16 +89,31 @@ public class SurveyServiceImpl implements SurveyService {
         this.gemmaService = gemmaService;
     }
 
+
     @Override
     @Transactional(readOnly = true)
     public List<SurveyDto> findAllSurveys(String authorizationHeader) {
         Optional<AppUser> currentUser = currentUser(authorizationHeader);
-        if(currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)){
+        if (currentUser.isEmpty()) {
+            return List.of();
+        }
+
+        AppUser user = currentUser.get();
+        if ("ADMIN".equals(user.getRole())) {
             return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
         }
+// <<<<<<< sandbox_combined
+
         return surveyRepository.findAll().stream()
                 .filter(survey -> survey.getReviewers().stream()
-                        .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
+                        .anyMatch(contributor -> contributor.getEmail() != null
+                                && user.getEmail() != null
+                                && contributor.getEmail().equalsIgnoreCase(user.getEmail())))
+// =======
+//         return surveyRepository.findAll().stream()
+//                 .filter(survey -> survey.getReviewers().stream()
+//                         .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
+// >>>>>>> sandbox_branch
                 .map(this::toSurveyDto)
                 .toList();
     }
@@ -1058,6 +1073,27 @@ public class SurveyServiceImpl implements SurveyService {
         return null;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
+        Optional<AppUser> currentUser = currentUser(authorizationHeader);
+        if (currentUser.isEmpty()) {
+            return List.of();
+        }
+        if (currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)) {
+            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
+        }
+        // For non-admin users: only show surveys where they are the Owner.
+        // Surveys they are assigned to review (Reviewer role) are available via /api/reviews/surveys.
+        return surveyRepository.findAll().stream()
+                .filter(survey -> survey.getReviewers().stream()
+                        .anyMatch(contributor ->
+                                contributor.getEmail().equals(currentUser.get().getEmail())
+                                && "Owner".equals(contributor.getRole())))
+                .map(this::toSurveyDto)
+                .toList();
+    }
+
     private void ensureOwner(Survey survey, String authorizationHeader) {
         Optional<AppUser> currentUserOpt = currentUser(authorizationHeader);
 
@@ -1069,6 +1105,38 @@ public class SurveyServiceImpl implements SurveyService {
         if (currentUserOpt.isPresent()) {
             AppUser user = currentUserOpt.get();
 
+// <<<<<<< sandbox_combined
+//             // 2. Look up if this user already has an Owner Reviewer record (by AppUser + role).
+//             //    Since a user can also be a Reviewer on other surveys, we need to find specifically
+//             //    their "Owner" record (or create one if it doesn't exist yet).
+//             Optional<Reviewer> existingOwnerOpt = reviewerRepository.findByAppUserAndRole(user, "Owner");
+
+//             if (existingOwnerOpt.isPresent()) {
+//                 Reviewer existing = existingOwnerOpt.get();
+//                 // If they are already associated with this survey, do nothing
+//                 if (!existing.getSurveys().contains(survey)) {
+//                     existing.getSurveys().add(survey);
+//                     reviewerRepository.save(existing);
+//                 }
+//             } else {
+//                 // 3. No Owner Reviewer record for this AppUser yet — create one
+//                 List<Survey> associatedSurveys = new java.util.ArrayList<>();
+//                 associatedSurveys.add(survey);
+
+//                 Reviewer newOwner = new Reviewer(
+//                         null,
+//                         java.util.UUID.randomUUID().toString(),
+//                         user.getName(),
+//                         user.getEmail(),
+//                         "Owner",
+//                         Instant.now(),
+//                         user,
+//                         associatedSurveys,
+//                         new java.util.ArrayList<>()
+//                 );
+//                 reviewerRepository.save(newOwner);
+//             }
+// =======
             // 2. Safely find or create the reviewer
             Optional<Reviewer> existingReviewerOpt = reviewerRepository.findFirstByEmail(user.getEmail());
             Reviewer targetOwner;
@@ -1129,7 +1197,9 @@ public class SurveyServiceImpl implements SurveyService {
             }
 
             reviewerRepository.save(fallbackOwner);
+// >>>>>>> sandbox_branch
         }
+        // No fallback for unauthenticated requests — survey creation requires auth
     }
 
     private SurveyDto toSurveyDto(Survey survey) {
@@ -1169,8 +1239,8 @@ public class SurveyServiceImpl implements SurveyService {
                 .findFirst()
                 .orElse(null);
         UserResponse owner = ownerReviewer == null
-                ? new UserResponse(null, "Survey Owner", "owner@example.com")
-                : new UserResponse(null, ownerReviewer.getName(), ownerReviewer.getEmail());
+                ? new UserResponse(-1L, "Survey Owner", "owner@example.com")
+                : new UserResponse(ownerReviewer.getReviewerId(), ownerReviewer.getName(), ownerReviewer.getEmail());
 
         return new SurveyDetailsDto(
                 survey.getExternalId(),
