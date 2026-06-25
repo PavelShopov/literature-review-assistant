@@ -427,8 +427,8 @@ export default function SurveyDetailsPage() {
   };
 
   const handleOpen = (article: Article) => {
-    openArticleResource(article)
-      .catch((err) => toast.error(err instanceof Error ? err.message : "Article could not be opened"));
+    // Navigates internally to /survey/:surveyId/articles/:articleId
+    navigate(`/survey/${surveyId}/articles/${article.id}`);
   };
 
   const handleEdit = (id: string) => {

@@ -2,9 +2,12 @@ package mk.ukim.finki.literaturereviewassistant.web.controller;
 
 import mk.ukim.finki.literaturereviewassistant.model.Article;
 import mk.ukim.finki.literaturereviewassistant.model.Author;
+import mk.ukim.finki.literaturereviewassistant.model.Review;
 import mk.ukim.finki.literaturereviewassistant.service.ArticleService;
 import mk.ukim.finki.literaturereviewassistant.service.GemmaService;
 
+import mk.ukim.finki.literaturereviewassistant.service.ReviewService;
+import mk.ukim.finki.literaturereviewassistant.web.dto.ReviewSubmissionDto;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
@@ -24,6 +27,8 @@ public class ArticleController {
     @Autowired
     private ArticleService articleService;
 
+    @Autowired
+    private ReviewService reviewService;
     @Autowired
     private GemmaService gemmaService;
 
@@ -121,7 +126,7 @@ public class ArticleController {
 
     @PostMapping("/{articleId}/analyze-gemma")
     public ResponseEntity<String> analyzeWithGemma(
-            @PathVariable Long articleId,
+            @PathVariable String articleId,
             @RequestBody Map<String, String> requestPayload) {
 
         String prompt = requestPayload.get("prompt");
@@ -147,5 +152,24 @@ public class ArticleController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .body(cleanJson);
+    }
+
+    @PutMapping("/{articleId}/review")
+    public ResponseEntity<Review> saveReview(
+            @PathVariable Long articleId,
+            @RequestBody ReviewSubmissionDto submissionDto) {
+
+        Long mockReviewerId = 1L; // Replace with Principal / security session configurations later
+        Review updatedReview = reviewService.saveOrUpdateReview(articleId, mockReviewerId, submissionDto);
+        return ResponseEntity.ok(updatedReview);
+    }
+
+    // Endpoint for hydration and structural lookup during React setup mounting cycles
+    @GetMapping("/{articleId}/review-data")
+    public ResponseEntity<Review> getReviewData(@PathVariable Long articleId) {
+        Long mockReviewerId = 1L;
+        return reviewService.getReviewByArticleAndReviewer(articleId, mockReviewerId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.noContent().build()); // Returns 204 if no previous review exists
     }
 }

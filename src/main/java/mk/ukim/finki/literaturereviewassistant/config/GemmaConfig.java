@@ -14,7 +14,7 @@ public class GemmaConfig {
     @Value("${nvidia.nim.model:google/diffusiongemma-26b-a4b-it}")
     private String modelName;
 
-//    @Bean
+    @Bean
     public RestTemplate restTemplate() {
         return new RestTemplate();
     }

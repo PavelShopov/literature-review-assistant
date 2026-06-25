@@ -1,5 +1,6 @@
 package mk.ukim.finki.literaturereviewassistant.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import mk.ukim.finki.literaturereviewassistant.model.Article;
 import mk.ukim.finki.literaturereviewassistant.model.ArticleStatus;
 import mk.ukim.finki.literaturereviewassistant.model.Review;
@@ -11,10 +12,7 @@ import mk.ukim.finki.literaturereviewassistant.repository.ReviewerRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
 import mk.ukim.finki.literaturereviewassistant.service.AuthService;
 import mk.ukim.finki.literaturereviewassistant.service.ReviewService;
-import mk.ukim.finki.literaturereviewassistant.web.dto.ReviewableArticleDto;
-import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDto;
-import mk.ukim.finki.literaturereviewassistant.web.dto.UserResponse;
-import mk.ukim.finki.literaturereviewassistant.web.dto.ReviewRequest;
+import mk.ukim.finki.literaturereviewassistant.web.dto.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpStatus;
@@ -24,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -283,5 +282,43 @@ public class ReviewServiceImpl implements ReviewService {
         return reviewRepository.findTopByArticle_ArticleIdOrderByReviewIdDesc(article.getArticleId())
                 .map(review -> review.getReviewer() != null ? review.getReviewer().getName() : null)
                 .orElse(null);
+    }
+
+    @Override
+    @Transactional
+    public Review saveOrUpdateReview(Long articleId, Long reviewerId, ReviewSubmissionDto submissionDto) {
+        Article article = articleRepository.findById(articleId)
+                .orElseThrow(() -> new IllegalArgumentException("Article not found: " + articleId));
+
+        Reviewer reviewer = reviewerRepository.findById(reviewerId)
+                .orElseThrow(() -> new IllegalArgumentException("Reviewer not found: " + reviewerId));
+
+        // Serialize the Map structure cleanly into a native JSON String
+        String jsonText;
+        try {
+            jsonText = objectMapper.writeValueAsString(submissionDto.getReviewForm());
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Error parsing taxonomy form values to JSON string", e);
+        }
+
+        // Fetch existing or initialize a fresh model object
+        Review review = reviewRepository.findByArticleAndReviewer(article, reviewer)
+                .orElse(new Review());
+
+        review.setArticle(article);
+        review.setReviewer(reviewer);
+        review.setJsonResponse(jsonText);
+
+        return reviewRepository.save(review);
+    }
+
+    @Override
+    public Optional<Review> getReviewByArticleAndReviewer(Long articleId, Long reviewerId) {
+        Article article = articleRepository.findById(articleId)
+                .orElseThrow(() -> new IllegalArgumentException("Article not found: " + articleId));
+        Reviewer reviewer = reviewerRepository.findById(reviewerId)
+                .orElseThrow(() -> new IllegalArgumentException("Reviewer not found: " + reviewerId));
+
+        return reviewRepository.findByArticleAndReviewer(article, reviewer);
     }
 }

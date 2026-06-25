@@ -13,4 +13,5 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     List<Review> findByReviewer(Reviewer reviewer);
     Optional<Review> findByReviewerAndArticle(Reviewer reviewer, Article article);
     Optional<Review> findTopByArticle_ArticleIdOrderByReviewIdDesc(Long articleId);
+    Optional<Review> findByArticleAndReviewer(Article article, Reviewer reviewer);
 }
