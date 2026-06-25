@@ -47,7 +47,7 @@ export default function SurveysToReviewPage() {
   );
 
   const handleViewSurvey = (surveyId: string) => {
-    navigate(`/survey/${surveyId}`);
+    navigate(`/surveys/to-review/${surveyId}/review`);
   };
 
   return (

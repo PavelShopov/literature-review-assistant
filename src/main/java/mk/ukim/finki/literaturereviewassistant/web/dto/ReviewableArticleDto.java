@@ -18,6 +18,7 @@ public record ReviewableArticleDto(
         String inclusionSummary,
         List<String> authors,
         boolean reviewed,
-        String jsonResponse
+        String jsonResponse,
+        List<AIAnnotationDto> aiAnnotations
 ) {
 }
