@@ -12,4 +12,5 @@ import java.util.Optional;
 public interface ReviewRepository extends JpaRepository<Review, Long> {
     List<Review> findByReviewer(Reviewer reviewer);
     Optional<Review> findByReviewerAndArticle(Reviewer reviewer, Article article);
+    Optional<Review> findTopByArticle_ArticleIdOrderByReviewIdDesc(Long articleId);
 }

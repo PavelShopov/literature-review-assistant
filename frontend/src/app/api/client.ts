@@ -507,6 +507,8 @@ export type ReviewableArticle = {
   reviewed: boolean;
   jsonResponse: string | null;
   aiAnnotations: AIAnnotation[];
+  reviewedBy?: string | null;
+  reviewText?: string | null;
 };
 
 export function getArticlesToReview(surveyId: string): Promise<ReviewableArticle[]> {

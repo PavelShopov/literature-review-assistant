@@ -6,6 +6,7 @@ import mk.ukim.finki.literaturereviewassistant.repository.ArticleRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.AuthorRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.AuthSessionRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.DocumentRepository;
+import mk.ukim.finki.literaturereviewassistant.repository.ReviewRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.ReviewerRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
 import mk.ukim.finki.literaturereviewassistant.service.GeminiService;
@@ -68,6 +69,7 @@ public class SurveyServiceImpl implements SurveyService {
     private final AuthorRepository authorRepository;
     private final AuthSessionRepository authSessionRepository;
     private final DocumentRepository documentRepository;
+    private final ReviewRepository reviewRepository;
     private final ReviewerRepository reviewerRepository;
     private final BibTexParser bibTexParser;
     private final PdfExtractorService pdfExtractorService;
@@ -87,6 +89,7 @@ public class SurveyServiceImpl implements SurveyService {
             AuthorRepository authorRepository,
             AuthSessionRepository authSessionRepository,
             DocumentRepository documentRepository,
+            ReviewRepository reviewRepository,
             ReviewerRepository reviewerRepository,
             BibTexParser bibTexParser,
             PdfExtractorService pdfExtractorService,
@@ -98,6 +101,7 @@ public class SurveyServiceImpl implements SurveyService {
         this.authorRepository = authorRepository;
         this.authSessionRepository = authSessionRepository;
         this.documentRepository = documentRepository;
+        this.reviewRepository = reviewRepository;
         this.reviewerRepository = reviewerRepository;
         this.bibTexParser = bibTexParser;
         this.pdfExtractorService = pdfExtractorService;
@@ -1464,6 +1468,10 @@ public class SurveyServiceImpl implements SurveyService {
         String openUrl = hasPdf ? pdfUrl : externalUrl != null ? externalUrl : doiUrl != null ? doiUrl : scholarlySearchUrl;
         String openType = hasPdf ? "pdf" : externalUrl != null ? "external" : doiUrl != null ? "doi"
                 : scholarlySearchUrl != null ? "external" : null;
+        Review latestReview = article.getArticleId() == null ? null
+                : reviewRepository.findTopByArticle_ArticleIdOrderByReviewIdDesc(article.getArticleId()).orElse(null);
+        String reviewedBy = latestReview != null && latestReview.getReviewer() != null ? latestReview.getReviewer().getName() : null;
+        String reviewText = latestReview != null ? reviewDisplayText(latestReview.getJsonResponse()) : null;
 
         return new ArticleDto(
                 article.getExternalId(),
@@ -1480,8 +1488,29 @@ public class SurveyServiceImpl implements SurveyService {
                 openUrl,
                 openType,
                 hasPdf,
-                pdfUrl
+                pdfUrl,
+                reviewedBy,
+                reviewText
         );
+    }
+
+    private String reviewDisplayText(String jsonResponse) {
+        if (jsonResponse == null || jsonResponse.isBlank()) {
+            return null;
+        }
+        try {
+            java.util.Map<?, ?> map = new com.fasterxml.jackson.databind.ObjectMapper().readValue(jsonResponse, java.util.Map.class);
+            Object note = map.get("note");
+            if (note != null && !note.toString().isBlank()) {
+                return note.toString();
+            }
+            Object decision = map.get("decision");
+            if (decision != null && !decision.toString().isBlank()) {
+                return decision.toString();
+            }
+        } catch (Exception ignored) {
+        }
+        return jsonResponse;
     }
 
     private boolean isDoiResolverUrl(String url, String doi) {

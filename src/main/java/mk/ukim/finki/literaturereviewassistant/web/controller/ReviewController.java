@@ -2,6 +2,7 @@ package mk.ukim.finki.literaturereviewassistant.web.controller;
 
 import mk.ukim.finki.literaturereviewassistant.service.ReviewService;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDto;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,12 +31,13 @@ public class ReviewController {
     }
 
     @PostMapping("/surveys/{surveyId}/articles/{articleId}")
-    public mk.ukim.finki.literaturereviewassistant.model.Review addReview(
+    public ResponseEntity<Void> addReview(
             @PathVariable String surveyId,
             @PathVariable String articleId,
             @RequestBody mk.ukim.finki.literaturereviewassistant.web.dto.ReviewRequest request,
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader
     ) {
-        return reviewService.addReview(authorizationHeader, surveyId, articleId, request);
+        reviewService.addReview(authorizationHeader, surveyId, articleId, request);
+        return ResponseEntity.noContent().build();
     }
 }

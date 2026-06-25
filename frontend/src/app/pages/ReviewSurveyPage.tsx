@@ -120,9 +120,14 @@ export default function ReviewSurveyPage() {
                     </p>
                   </div>
                   {article.reviewed && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      Reviewed
-                    </span>
+                    <div className="text-right">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                        Reviewed
+                      </span>
+                      {article.reviewedBy && (
+                        <p className="mt-1 text-xs text-gray-500">by {article.reviewedBy}</p>
+                      )}
+                    </div>
                   )}
                 </div>
                 

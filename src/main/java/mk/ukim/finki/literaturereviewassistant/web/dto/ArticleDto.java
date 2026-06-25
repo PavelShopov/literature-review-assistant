@@ -20,6 +20,8 @@ public record ArticleDto(
         String openUrl,
         String openType,
         boolean hasPdf,
-        String pdfUrl
+        String pdfUrl,
+        String reviewedBy,
+        String reviewText
 ) {
 }

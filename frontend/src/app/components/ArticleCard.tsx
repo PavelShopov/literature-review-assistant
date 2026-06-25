@@ -1,4 +1,6 @@
-import { Eye, Edit, Trash2, ExternalLink, UserRound } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+import { Eye, Edit, Trash2, ExternalLink, UserRound, X } from "lucide-react";
 import { motion } from "motion/react";
 
 export type ArticleStatus = "INCLUDED" | "EXCLUDED" | "PENDING";
@@ -23,6 +25,8 @@ export interface Article {
     name: string;
     role: "Owner" | "Reviewer";
   };
+  reviewedBy?: string | null;
+  reviewText?: string | null;
 }
 
 interface ArticleCardProps {
@@ -65,6 +69,26 @@ export function ArticleCard({
   canDelete = true,
 }: ArticleCardProps) {
   const status = statusConfig[article.status];
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
+
+  useEffect(() => {
+    setPortalReady(true);
+    return () => setPortalReady(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isReviewOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsReviewOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isReviewOpen]);
 
   return (
     <motion.div
@@ -155,6 +179,58 @@ export function ArticleCard({
             <UserRound className="w-3.5 h-3.5" />
             <span>Added by {article.addedBy.name}</span>
           </div>
+        )}
+
+        {article.reviewedBy && article.status !== "PENDING" && (
+          <button
+            type="button"
+            onClick={() => setIsReviewOpen(true)}
+            className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-left text-xs text-blue-800 hover:bg-blue-100 transition-colors"
+          >
+            Reviewed by {article.reviewedBy}
+            <span className="ml-1 underline">view note</span>
+          </button>
+        )}
+
+        {portalReady && isReviewOpen && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4" onClick={() => setIsReviewOpen(false)}>
+            <div
+              className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4">
+                <div>
+                  <h4 className="text-lg font-semibold text-gray-900">Review note</h4>
+                  <p className="text-sm text-gray-500">
+                    Reviewed by {article.reviewedBy ?? "Unknown reviewer"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsReviewOpen(false)}
+                  className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  aria-label="Close review note"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-5">
+                <div className="whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-800">
+                  {article.reviewText || article.status}
+                </div>
+              </div>
+              <div className="flex justify-end border-t border-gray-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setIsReviewOpen(false)}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
         )}
 
         {/* Actions */}
