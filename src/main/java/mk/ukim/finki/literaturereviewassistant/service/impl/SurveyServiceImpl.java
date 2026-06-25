@@ -284,7 +284,7 @@ public class SurveyServiceImpl implements SurveyService {
     public ArticleDto updateArticle(String surveyId, String articleId, ArticleUpdateRequest request, String authorizationHeader) {
         Survey survey = getSurveyOrThrow(surveyId);
         Article article = articleRepository.findByExternalId(articleId)
-                .filter(item -> surveyId.equals(item.getSurveyExternalId()))
+                .filter(item -> belongsToSurvey(item, survey))
                 .orElseThrow(() -> new EntityNotFoundException("Article not found: " + articleId));
 
         AppUser currentUser = currentUserRequired(authorizationHeader);
@@ -325,7 +325,7 @@ public class SurveyServiceImpl implements SurveyService {
     public void deleteArticle(String surveyId, String articleId, String authorizationHeader) {
         Survey survey = getSurveyOrThrow(surveyId);
         Article article = articleRepository.findByExternalId(articleId)
-                .filter(item -> surveyId.equals(item.getSurveyExternalId()))
+                .filter(item -> belongsToSurvey(item, survey))
                 .orElseThrow(() -> new EntityNotFoundException("Article not found: " + articleId));
 
         AppUser currentUser = currentUserRequired(authorizationHeader);
@@ -1047,6 +1047,19 @@ public class SurveyServiceImpl implements SurveyService {
             survey.getArticleLinks().add(link);
         }
         return articleRepository.save(article);
+    }
+
+    private boolean belongsToSurvey(Article article, Survey survey) {
+        if (article == null || survey == null) {
+            return false;
+        }
+        if (survey.getExternalId() != null && survey.getExternalId().equals(article.getSurveyExternalId())) {
+            return true;
+        }
+        return article.getSurveyLinks().stream()
+                .anyMatch(link -> link.getSurvey() != null
+                        && survey.getExternalId() != null
+                        && survey.getExternalId().equals(link.getSurvey().getExternalId()));
     }
 
     private void enrichExistingArticle(Article article, ArticleMetadata metadata) {

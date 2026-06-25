@@ -382,6 +382,43 @@ class SurveyServiceImplImportTest {
         assertTrue(surveys.stream().anyMatch(survey -> survey.id().equals(created.id())));
     }
 
+    @Test
+    void updatesStatusForArticleLinkedThroughSurveyJoinTable() {
+        AppUser owner = appUserRepository.save(new AppUser(null, "Owner", "owner@test.com", "hash", "USER"));
+        authSessionRepository.save(new AuthSession(null, "owner-token", Instant.now(), owner));
+
+        Survey savedSurvey = surveyRepository.findByExternalId("survey-1").orElseThrow();
+        Article article = article("article-linked", null);
+        article.setSurveyExternalId(null);
+        articleRepository.save(article);
+
+        ArticleSurvey link = new ArticleSurvey();
+        link.setArticle(article);
+        link.setSurvey(savedSurvey);
+        link.setStatus(ArticleStatus.PENDING);
+        article.getSurveyLinks().add(link);
+        savedSurvey.getArticleLinks().add(link);
+        articleRepository.save(article);
+
+        ArticleDto updated = service.updateArticle(
+                savedSurvey.getExternalId(),
+                article.getExternalId(),
+                new ArticleUpdateRequest(
+                        article.getTitle(),
+                        List.of("Author One"),
+                        article.getJournal(),
+                        article.getPublicationYear(),
+                        article.getDoi(),
+                        "INCLUDED",
+                        article.getArticleAbstract(),
+                        article.getInclusionSummary()
+                ),
+                "Bearer owner-token"
+        );
+
+        assertEquals("INCLUDED", updated.status());
+    }
+
     private AddedByDto addedBy() {
         return new AddedByDto("1", "Owner", "Owner");
     }
