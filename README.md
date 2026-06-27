@@ -59,7 +59,7 @@ npm run dev
 ```
 Once initialized, the terminal will provide a local address (usually http://localhost:5173) to view the application interface.
 
-### Backend Setup (Spring Boot)
+### 4. Backend Setup (Spring Boot)
 Open a new terminal window, navigate back to the root directory where the Spring Boot project lives, and initialize the application runner:
 ```bash
 ./mvnw spring-boot:run
@@ -69,4 +69,4 @@ The backend server will hook directly into your active Docker database container
 
 ## Live Demo
 You can interact with a live environment of the platform directly here:
-https://www.youtube.com/watch?v=dlUtoUIQE9Q
+[https://www.youtube.com/watch?v=dlUtoUIQE9Q](https://youtu.be/9Ul16pxSh20?si=Wv0irE3ztOw_3DeJ)
