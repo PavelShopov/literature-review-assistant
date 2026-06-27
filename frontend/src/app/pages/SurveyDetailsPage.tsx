@@ -11,6 +11,7 @@ import {
   Filter,
   UsersRound,
   Sliders,
+    Save,
   CheckSquare,
   Square
 } from "lucide-react";
@@ -291,6 +292,36 @@ export default function SurveyDetailsPage() {
     setSelectedCriteria(updatedCriteria);
     localStorage.setItem(`survey:${surveyId}:criteria`, JSON.stringify(updatedCriteria));
     toast.success("Extraction parameters updated");
+  };
+
+  const [savingCriteria, setSavingCriteria] = useState<boolean>(false);
+  const handleSaveCriteriaToDatabase = async () => {
+    try {
+      setSavingCriteria(true);
+
+      const response = await fetch(`http://localhost:8080/api/surveys/${surveyId}/criteria`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ criteria: selectedCriteria }) // Matches backend payload wrapper key
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        throw new Error(`Server returned error status ${response.status}: ${errorText}`);
+      }
+
+      // Keep local storage as a local performance cache fallback matching your ArticleDetails layout
+      localStorage.setItem(`survey:${surveyId}:criteria`, JSON.stringify(selectedCriteria));
+
+      toast.success("Structured review parameters synced with database successfully!");
+    } catch (err: any) {
+      console.error("Database sync failure:", err);
+      toast.error(`Database Sync Failed: ${err.message}`);
+    } finally {
+      setSavingCriteria(false);
+    }
   };
 
   const handleSelectAllCriteria = () => {
@@ -669,27 +700,42 @@ export default function SurveyDetailsPage() {
                         <p className="text-xs text-gray-500">Toggle target dimensions that reviewers must evaluate for incoming articles</p>
                       </div>
                     </div>
+
                     {isOwnerView && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={handleSelectAllCriteria}
+                                className="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                            >
+                              Select All
+                            </button>
+                            <span className="text-gray-300 text-xs">|</span>
+                            <button
+                                type="button"
+                                onClick={handleClearAllCriteria}
+                                className="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                            >
+                              Clear All
+                            </button>
+                          </div>
+
+                          {/* Sync Pipeline Save Trigger Button Integrated Cleanly Here */}
                           <button
                               type="button"
-                              onClick={handleSelectAllCriteria}
-                              className="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              disabled={savingCriteria}
+                              onClick={handleSaveCriteriaToDatabase}
+                              className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg shadow-sm transition disabled:bg-gray-300"
                           >
-                            Select All
-                          </button>
-                          <span className="text-gray-300 text-xs">|</span>
-                          <button
-                              type="button"
-                              onClick={handleClearAllCriteria}
-                              className="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                          >
-                            Clear All
+                            <Save className="w-3.5 h-3.5" />
+                            {savingCriteria ? "Syncing..." : "Save Selection"}
                           </button>
                         </div>
                     )}
                   </div>
 
+                  {/* Selection Option Grid Layout Mapping Elements */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {EXTRACTION_CRITERIA_OPTIONS.map((option) => {
                       const isChecked = selectedCriteria.includes(option.id);
@@ -713,14 +759,15 @@ export default function SurveyDetailsPage() {
                                 {option.label}
                               </p>
                               <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-semibold bg-gray-100 text-gray-500">
-                              {option.group}
-                            </span>
+                {option.group}
+              </span>
                             </div>
                           </button>
                       );
                     })}
                   </div>
 
+                  {/* Review Mode Notice Area Text Prompt Block */}
                   {!isOwnerView && (
                       <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-100 text-xs text-amber-700">
                         * You are in reviewer viewing mode. Review parameters can only be altered by the survey administrator.

@@ -102,30 +102,17 @@ public class ReviewServiceImpl implements ReviewService {
 
         for (Reviewer reviewer : reviewers) {
             for (Survey survey : reviewer.getSurveys()) {
-                // Skip surveys that this user created (is the Owner of).
-                // A user is the owner if they are the ONLY reviewer for this survey with role "Owner"
-                // AND their email matches. We detect ownership by checking if all "Owner"-role
-                // reviewers on this survey have this user's email.
                 boolean isOwner = reviewerRepository.findBySurveysContaining(survey).stream()
                         .anyMatch(r -> "Owner".equals(r.getRole())
                                 && r.getEmail().equalsIgnoreCase(user.email()));
                 if (isOwner) {
                     continue;
                 }
-
-                // Include this survey only if there are pending (unreviewed) articles
-//                if (survey.getArticleLinks() == null || survey.getArticleLinks().isEmpty()) {
-//                    continue;
-//                }
                 List<Review> reviews = reviewRepository.findByReviewer(reviewer);
                 Set<Long> reviewedArticleIds = reviews.stream()
                         .map(r -> r.getArticle().getArticleId())
                         .collect(Collectors.toSet());
-//                boolean hasPending = survey.getArticleLinks().stream()
-//                        .anyMatch(as -> !reviewedArticleIds.contains(as.getArticle().getArticleId()));
-//                if (hasPending) {
-//                }
-                surveysToReview.add(toSurveyDto(survey));
+                surveysToReview.add(toSurveyDto(survey, reviewer));
             }
         }
         return surveysToReview;
@@ -203,14 +190,38 @@ public class ReviewServiceImpl implements ReviewService {
         return dtos;
     }
 
-    private SurveyDto toSurveyDto(Survey survey) {
+    private SurveyDto toSurveyDto(Survey survey, Reviewer reviewer) {
+        if (survey == null) {
+            return new SurveyDto(null, "Untitled Survey", null, null, "Draft", 0, 0);
+        }
+
+        String extId = survey.getExternalId();
+
+        List<Article> articles = articleRepository.findBySurveyLinks_Survey(survey);
+        int articleCount = articles != null ? articles.size() : 0;
+
+        int reviewedCount = 0;
+        if (reviewer != null && articles != null && !articles.isEmpty()) {
+            List<Review> reviewerReviews = reviewRepository.findByReviewer(reviewer);
+
+            Set<Long> reviewedArticleIds = reviewerReviews.stream()
+                    .filter(r -> r.getArticle() != null)
+                    .map(r -> r.getArticle().getArticleId())
+                    .collect(Collectors.toSet());
+
+            reviewedCount = (int) articles.stream()
+                    .filter(article -> reviewedArticleIds.contains(article.getArticleId()))
+                    .count();
+        }
+
         return new SurveyDto(
-                survey.getExternalId(),
-                survey.getTitle(),
+                extId,
+                survey.getTitle() != null ? survey.getTitle() : "Untitled Survey",
                 survey.getDescription(),
-                survey.getCreatedDate() != null ? survey.getCreatedDate().toString() : "",
-                survey.getStatus(),
-                survey.getArticleLinks() != null ? survey.getArticleLinks().size() : 0
+                survey.getCreatedDate() != null ? survey.getCreatedDate().toString() : null,
+                survey.getStatus() != null ? survey.getStatus() : "Draft",
+                articleCount,
+                reviewedCount
         );
     }
 
@@ -286,8 +297,8 @@ public class ReviewServiceImpl implements ReviewService {
 
     @Override
     @Transactional
-    public Review saveOrUpdateReview(Long articleId, Long reviewerId, ReviewSubmissionDto submissionDto) {
-        Article article = articleRepository.findById(articleId)
+    public Review saveOrUpdateReview(String articleId, Long reviewerId, ReviewSubmissionDto submissionDto) {
+        Article article = articleRepository.findByExternalId(articleId)
                 .orElseThrow(() -> new IllegalArgumentException("Article not found: " + articleId));
 
         Reviewer reviewer = reviewerRepository.findById(reviewerId)

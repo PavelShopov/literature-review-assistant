@@ -153,22 +153,45 @@ export default function ArticleDetails() {
         return MASTER_TAXONOMY_DIMENSIONS.filter(dim => targetingIds.includes(dim.id));
     }, [activeCriteriaIds]);
 
+
+
     useEffect(() => {
         async function fetchArticleDetails() {
             try {
                 setLoading(true);
                 if (!articleId) throw new Error("Article ID is missing from the URL params.");
 
-                // 1. Fetch criteria context with core baseline fallbacks if needed
+                // 1. Fetch criteria dimensions from Database with LocalStorage and Preset Fallbacks
                 let criteriaIds: string[] = [];
+
                 if (surveyId) {
-                    const savedCriteria = localStorage.getItem(`survey:${surveyId}:criteria`);
-                    if (savedCriteria) {
-                        const parsed = JSON.parse(savedCriteria);
-                        // If it's a valid non-empty array, hook it in; otherwise use standard presets
-                        criteriaIds = Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_CRITERIA_IDS;
-                    } else {
-                        criteriaIds = DEFAULT_CRITERIA_IDS;
+                    try {
+                        // Extract numeric ID sequence in case url matches format "survey-123"
+                        const parsedId = surveyId.includes('-') ? surveyId.split('-').pop() : surveyId;
+
+                        const criteriaResponse = await fetch(`http://localhost:8080/api/surveys/${parsedId}/criteria`);
+                        if (criteriaResponse.ok) {
+                            const dbData = await criteriaResponse.json();
+                            // Assumes DB payload layout returns an array directly, or an object containing a criteria field
+                            const extractedIds = Array.isArray(dbData) ? dbData : dbData.criteria;
+
+                            if (Array.isArray(extractedIds) && extractedIds.length > 0) {
+                                criteriaIds = extractedIds;
+                            }
+                        }
+                    } catch (dbFetchError) {
+                        console.warn("Could not retrieve parameters from DB ecosystem. Checking localized caches...", dbFetchError);
+                    }
+
+                    // Cache fallback loop if database is unreachable or hasn't saved properties yet
+                    if (criteriaIds.length === 0) {
+                        const savedCriteria = localStorage.getItem(`survey:${surveyId}:criteria`);
+                        if (savedCriteria) {
+                            const parsed = JSON.parse(savedCriteria);
+                            criteriaIds = Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_CRITERIA_IDS;
+                        } else {
+                            criteriaIds = DEFAULT_CRITERIA_IDS;
+                        }
                     }
                 } else {
                     criteriaIds = DEFAULT_CRITERIA_IDS;
@@ -193,7 +216,7 @@ export default function ArticleDetails() {
                     };
                 });
 
-                // 4. Hydrate prior records if they exist
+                // 4. Hydrate prior review records if they exist
                 try {
                     const reviewResponse = await fetch(`http://localhost:8080/api/articles/${articleId}/review-data`);
                     if (reviewResponse.ok && reviewResponse.status !== 204) {
@@ -336,7 +359,10 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                 body: JSON.stringify({ reviewForm: annotations })
             });
 
-            if (!response.ok) throw new Error("Submission pipeline responded with an exception");
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => "Unknown server error");
+                throw new Error(`Server returned status ${response.status}: ${errorText}`);
+            }
             toast.success("Review assessments saved successfully!");
         } catch (err: any) {
             toast.error(`Error saving review: ${err.message}`);
@@ -381,6 +407,16 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                     onClick={() => navigate(`/survey/${surveyId}`)}
                     className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition gap-1.5 group"
                 >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={2}
+                        stroke="currentColor"
+                        className="w-4 h-4 transform transition-transform group-hover:-translate-x-0.5"
+                    >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/>
+                    </svg>
                     Back to Survey Workspace
                 </button>
 

@@ -156,7 +156,7 @@ public class ArticleController {
 
     @PutMapping("/{articleId}/review")
     public ResponseEntity<Review> saveReview(
-            @PathVariable Long articleId,
+            @PathVariable String articleId,
             @RequestBody ReviewSubmissionDto submissionDto) {
 
         Long mockReviewerId = 1L; // Replace with Principal / security session configurations later

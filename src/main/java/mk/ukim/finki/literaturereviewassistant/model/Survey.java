@@ -4,7 +4,9 @@ import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Entity
 @Getter // Replaced @Data to prevent lazy initialization exceptions
@@ -49,6 +51,15 @@ public class Survey {
     @ManyToMany(mappedBy = "surveys", cascade = {CascadeType.MERGE, CascadeType.PERSIST})
     @ToString.Exclude
     private List<Reviewer> reviewers = new ArrayList<>();
+
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "survey_selected_criteria",
+            joinColumns = @JoinColumn(name = "survey_id")
+    )
+    @Column(name = "criterion_id")
+    private Set<String> selectedCriteria = new HashSet<>();
 
     // AUTOMATION: Automatically sets the date and default status when created
     @PrePersist

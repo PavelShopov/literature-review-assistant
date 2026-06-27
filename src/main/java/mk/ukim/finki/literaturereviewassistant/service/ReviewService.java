@@ -12,6 +12,6 @@ public interface ReviewService {
     mk.ukim.finki.literaturereviewassistant.model.Review addReview(String authorizationHeader, String surveyId, String articleId, mk.ukim.finki.literaturereviewassistant.web.dto.ReviewRequest request);
     List<SurveyDto> getSurveysToReview(String authorizationHeader);
     List<ReviewableArticleDto> getArticlesForReview(String authorizationHeader, String surveyId);
-    Review saveOrUpdateReview(Long articleId, Long reviewerId, ReviewSubmissionDto submissionDto);
+    Review saveOrUpdateReview(String articleId, Long reviewerId, ReviewSubmissionDto submissionDto);
     Optional<Review> getReviewByArticleAndReviewer(Long articleId, Long reviewerId);
 }

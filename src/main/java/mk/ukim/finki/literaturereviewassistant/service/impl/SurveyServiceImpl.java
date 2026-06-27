@@ -121,25 +121,24 @@ public class SurveyServiceImpl implements SurveyService {
     @Override
     @Transactional
     public SurveyDto saveSurvey(String surveyId, SurveyRequest request, String authorizationHeader) {
-        // 1. Check the database to see if this survey actually exists already
+        Optional<AppUser> currentUser = currentUser(authorizationHeader);
+        Reviewer reviewer = currentUser.isPresent()
+                ? reviewerRepository.findById(currentUser.get().getId()).orElse(null)
+                : null;
+
         boolean existsInDb = surveyId != null && !surveyId.isBlank() && surveyRepository.findByExternalId(surveyId).isPresent();
 
-        // If it doesn't exist in the DB, treat it as a fresh creation workflow!
         boolean isNew = !existsInDb;
 
         Survey survey;
         if (existsInDb) {
-            // It's an update! Grab the existing one
             survey = surveyRepository.findByExternalId(surveyId).orElseThrow();
         } else {
-            // It's a creation! Initialize a fresh entity
             survey = new Survey();
-            // Discard the frontend's temporary timestamp ID and assign a clean, secure UUID
             survey.setExternalId("survey-" + java.util.UUID.randomUUID().toString());
             survey.setCreatedDate(LocalDate.now());
         }
 
-        // 2. Map standard request fields safely
         survey.setTitle(request.name());
         survey.setDescription(request.description());
         survey.setStatus(request.status() == null ? "Draft" : request.status());
@@ -152,16 +151,10 @@ public class SurveyServiceImpl implements SurveyService {
             survey.setResearchQuestion("Define the main research question for this survey.");
         }
 
-        // 3. Persist the survey first so the owner association has a stable database identity
         Survey savedSurvey = surveyRepository.save(survey);
-
-        // 4. Bind the owner profile after the survey exists in the database
         ensureOwner(savedSurvey, authorizationHeader);
-
-        // 5. Flush the association update back to the database
         savedSurvey = surveyRepository.save(savedSurvey);
 
-        // 6. Explicitly break out early if it's a creation step to bypass proxy execution loops
         if (isNew) {
             return new SurveyDto(
                     savedSurvey.getExternalId(),
@@ -169,11 +162,12 @@ public class SurveyServiceImpl implements SurveyService {
                     savedSurvey.getDescription(),
                     safeDate(savedSurvey.getCreatedDate()),
                     savedSurvey.getStatus(),
-                    0 // Brand new, no articles exist yet!
+                    0,
+                    0
             );
         }
 
-        return toSurveyDto(savedSurvey);
+        return toSurveyDto(savedSurvey, reviewer);
     }
 
     @Override
@@ -1295,16 +1289,22 @@ public class SurveyServiceImpl implements SurveyService {
         if (currentUser.isEmpty()) {
             return List.of();
         }
+
+        Reviewer reviewer = reviewerRepository.findById(currentUser.get().getId()).orElse(null);
+
         if (currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)) {
-            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
+            return surveyRepository.findAll().stream()
+                    .map(survey -> toSurveyDto(survey, reviewer)) // 🟢 Pass the found reviewer profile
+                    .toList();
         }
+
         return surveyRepository.findAll().stream()
                 .filter(survey -> survey.getReviewers().stream()
-                        .anyMatch(contributor -> contributor.getEmail() != null 
-                                && currentUser.get().getEmail() != null 
+                        .anyMatch(contributor -> contributor.getEmail() != null
+                                && currentUser.get().getEmail() != null
                                 && contributor.getEmail().equalsIgnoreCase(currentUser.get().getEmail())
                                 && "Owner".equals(contributor.getRole())))
-                .map(this::toSurveyDto)
+                .map(survey -> toSurveyDto(survey, reviewer)) // 🟢 Pass the found reviewer profile
                 .toList();
     }
     private void ensureOwner(Survey survey, String authorizationHeader) {
@@ -1413,17 +1413,30 @@ public class SurveyServiceImpl implements SurveyService {
         // No fallback for unauthenticated requests — survey creation requires auth
     }
 
-    private SurveyDto toSurveyDto(Survey survey) {
+    private SurveyDto toSurveyDto(Survey survey, Reviewer reviewer) {
         String extId = survey == null ? null : survey.getExternalId();
         List<Article> articles = survey == null ? List.of() : articleRepository.findBySurveyLinks_Survey(survey);
         int articleCount = articles == null ? 0 : articles.size();
+
+        int reviewedCount = 0;
+        if (survey != null && reviewer != null && articles != null) {
+            List<Review> reviewerByList = reviewRepository.findByReviewer(reviewer);
+
+            reviewedCount = (int) articles.stream()
+                    .filter(article -> reviewerByList.stream()
+                            .anyMatch(review -> review.getArticle() != null
+                                    && review.getArticle().getArticleId().equals(article.getArticleId())))
+                    .count();
+        }
+
         return new SurveyDto(
                 extId,
                 survey != null && survey.getTitle() != null ? survey.getTitle() : "Untitled Survey",
                 survey != null ? survey.getDescription() : null,
                 survey != null ? safeDate(survey.getCreatedDate()) : null,
                 survey != null && survey.getStatus() != null ? survey.getStatus() : "Draft",
-                articleCount
+                articleCount,
+                reviewedCount
         );
     }
 
