@@ -4,6 +4,7 @@ public record ArticleImportRequest(
         String type,
         String data,
         AddedByDto addedBy,
-        String fileName
+        String fileName,
+        String mimeType
 ) {
 }

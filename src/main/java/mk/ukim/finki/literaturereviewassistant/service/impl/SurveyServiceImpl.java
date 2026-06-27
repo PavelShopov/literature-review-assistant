@@ -5,6 +5,8 @@ import mk.ukim.finki.literaturereviewassistant.model.*;
 import mk.ukim.finki.literaturereviewassistant.repository.ArticleRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.AuthorRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.AuthSessionRepository;
+import mk.ukim.finki.literaturereviewassistant.repository.DocumentRepository;
+import mk.ukim.finki.literaturereviewassistant.repository.ReviewRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.ReviewerRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
 import mk.ukim.finki.literaturereviewassistant.service.GeminiService;
@@ -19,6 +21,7 @@ import mk.ukim.finki.literaturereviewassistant.web.dto.AddedByDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleImportRequest;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleUpdateRequest;
+import mk.ukim.finki.literaturereviewassistant.web.dto.PdfDownload;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ReviewerDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDetailsDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDto;
@@ -26,6 +29,7 @@ import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyAskRequest;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyRequest;
 import mk.ukim.finki.literaturereviewassistant.web.dto.UserResponse;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpEntity;
@@ -37,17 +41,22 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,6 +68,8 @@ public class SurveyServiceImpl implements SurveyService {
     private final ArticleRepository articleRepository;
     private final AuthorRepository authorRepository;
     private final AuthSessionRepository authSessionRepository;
+    private final DocumentRepository documentRepository;
+    private final ReviewRepository reviewRepository;
     private final ReviewerRepository reviewerRepository;
     private final BibTexParser bibTexParser;
     private final PdfExtractorService pdfExtractorService;
@@ -66,11 +77,19 @@ public class SurveyServiceImpl implements SurveyService {
     private final GeminiService geminiService;
     private final GemmaService gemmaService;
 
+    @Value("${paper.import.max-pdf-size:104857600}")
+    private long maxPdfSize;
+
+    @Value("${paper.import.storage-dir:${user.home}/.literature-review-assistant/papers}")
+    private String paperStorageDir;
+
     public SurveyServiceImpl(
             SurveyRepository surveyRepository,
             ArticleRepository articleRepository,
             AuthorRepository authorRepository,
             AuthSessionRepository authSessionRepository,
+            DocumentRepository documentRepository,
+            ReviewRepository reviewRepository,
             ReviewerRepository reviewerRepository,
             BibTexParser bibTexParser,
             PdfExtractorService pdfExtractorService,
@@ -81,6 +100,8 @@ public class SurveyServiceImpl implements SurveyService {
         this.articleRepository = articleRepository;
         this.authorRepository = authorRepository;
         this.authSessionRepository = authSessionRepository;
+        this.documentRepository = documentRepository;
+        this.reviewRepository = reviewRepository;
         this.reviewerRepository = reviewerRepository;
         this.bibTexParser = bibTexParser;
         this.pdfExtractorService = pdfExtractorService;
@@ -90,33 +111,6 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
 
-    @Override
-    @Transactional(readOnly = true)
-    public List<SurveyDto> findAllSurveys(String authorizationHeader) {
-        Optional<AppUser> currentUser = currentUser(authorizationHeader);
-        if (currentUser.isEmpty()) {
-            return List.of();
-        }
-
-        AppUser user = currentUser.get();
-        if ("ADMIN".equals(user.getRole())) {
-            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
-        }
-// <<<<<<< sandbox_combined
-
-        return surveyRepository.findAll().stream()
-                .filter(survey -> survey.getReviewers().stream()
-                        .anyMatch(contributor -> contributor.getEmail() != null
-                                && user.getEmail() != null
-                                && contributor.getEmail().equalsIgnoreCase(user.getEmail())))
-// =======
-//         return surveyRepository.findAll().stream()
-//                 .filter(survey -> survey.getReviewers().stream()
-//                         .anyMatch(contributor -> contributor.getEmail().equals(currentUser.get().getEmail())))
-// >>>>>>> sandbox_branch
-                .map(this::toSurveyDto)
-                .toList();
-    }
 
     @Override
     @Transactional(readOnly = true)
@@ -127,25 +121,24 @@ public class SurveyServiceImpl implements SurveyService {
     @Override
     @Transactional
     public SurveyDto saveSurvey(String surveyId, SurveyRequest request, String authorizationHeader) {
-        // 1. Check the database to see if this survey actually exists already
+        Optional<AppUser> currentUser = currentUser(authorizationHeader);
+        Reviewer reviewer = currentUser.isPresent()
+                ? reviewerRepository.findById(currentUser.get().getId()).orElse(null)
+                : null;
+
         boolean existsInDb = surveyId != null && !surveyId.isBlank() && surveyRepository.findByExternalId(surveyId).isPresent();
 
-        // If it doesn't exist in the DB, treat it as a fresh creation workflow!
         boolean isNew = !existsInDb;
 
         Survey survey;
         if (existsInDb) {
-            // It's an update! Grab the existing one
             survey = surveyRepository.findByExternalId(surveyId).orElseThrow();
         } else {
-            // It's a creation! Initialize a fresh entity
             survey = new Survey();
-            // Discard the frontend's temporary timestamp ID and assign a clean, secure UUID
             survey.setExternalId("survey-" + java.util.UUID.randomUUID().toString());
             survey.setCreatedDate(LocalDate.now());
         }
 
-        // 2. Map standard request fields safely
         survey.setTitle(request.name());
         survey.setDescription(request.description());
         survey.setStatus(request.status() == null ? "Draft" : request.status());
@@ -158,13 +151,10 @@ public class SurveyServiceImpl implements SurveyService {
             survey.setResearchQuestion("Define the main research question for this survey.");
         }
 
-        // 3. Bind the owner profile before storing
-        ensureOwner(survey, authorizationHeader);
-
-        // 4. Save the completed entity structure
         Survey savedSurvey = surveyRepository.save(survey);
+        ensureOwner(savedSurvey, authorizationHeader);
+        savedSurvey = surveyRepository.save(savedSurvey);
 
-        // 5. Explicitly break out early if it's a creation step to bypass proxy execution loops
         if (isNew) {
             return new SurveyDto(
                     savedSurvey.getExternalId(),
@@ -172,11 +162,12 @@ public class SurveyServiceImpl implements SurveyService {
                     savedSurvey.getDescription(),
                     safeDate(savedSurvey.getCreatedDate()),
                     savedSurvey.getStatus(),
-                    0 // Brand new, no articles exist yet!
+                    0,
+                    0
             );
         }
 
-        return toSurveyDto(savedSurvey);
+        return toSurveyDto(savedSurvey, reviewer);
     }
 
     @Override
@@ -205,14 +196,36 @@ public class SurveyServiceImpl implements SurveyService {
     @Override
     @Transactional(readOnly = true)
     public List<ArticleDto> findArticles(String surveyId) {
-        getSurveyOrThrow(surveyId);
-        return articleRepository.findBySurveyExternalId(surveyId).stream().map(this::toArticleDto).toList();
+        Survey survey = getSurveyOrThrow(surveyId);
+        return articleRepository.findBySurveyLinks_Survey(survey).stream().map(this::toArticleDto).toList();
     }
 
     @Override
     @Transactional(readOnly = true)
     public ArticleDto findArticle(String articleId) {
         return toArticleDto(getArticleOrThrow(articleId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PdfDownload findArticlePdf(String articleId, String authorizationHeader) {
+        Article article = getArticleOrThrow(articleId);
+        AppUser currentUser = currentUserRequired(authorizationHeader);
+        if (!canAccessArticle(article, currentUser)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have access to this article");
+        }
+
+        Document document = documentRepository
+                .findFirstByArticleExternalIdAndTypeAndFilePathIsNotNull(article.getExternalId(), DocumentType.PDF)
+                .orElseGet(() -> documentRepository
+                        .findFirstByArticleExternalIdAndTypeAndPdfContentIsNotNull(article.getExternalId(), DocumentType.PDF)
+                        .orElseThrow(() -> new EntityNotFoundException("PDF not found for article: " + articleId)));
+
+        return new PdfDownload(
+                readPdfBytes(document, article),
+                defaultString(document.getMimeType(), MediaType.APPLICATION_PDF_VALUE),
+                safeDownloadFileName(document.getOriginalFileName(), article.getExternalId())
+        );
     }
 
     @Override
@@ -225,7 +238,11 @@ public class SurveyServiceImpl implements SurveyService {
             List<BibEntry> entries = bibTexParser.parse(request.data() == null ? "" : request.data());
             List<Article> imported = new ArrayList<>();
             for (BibEntry entry : entries) {
-                imported.add(saveImportedArticle(survey, addedBy, metadataFromBibEntry(entry), null));
+                ArticleMetadata metadata = metadataFromBibEntry(entry);
+                if (!hasText(metadata.getDoi()) && !hasText(metadata.getUrl())) {
+                    metadata = mergeMissingMetadata(metadata, fetchCrossrefMetadataByTitle(metadata.getTitle(), metadata.getYear()));
+                }
+                imported.add(saveImportedArticle(survey, addedBy, metadata, null));
             }
             if (imported.isEmpty()) {
                 throw new EntityNotFoundException("No BibTeX entries could be parsed");
@@ -235,9 +252,7 @@ public class SurveyServiceImpl implements SurveyService {
 
         if ("pdf".equalsIgnoreCase(request.type())) {
             byte[] pdfBytes = decodePdfBytes(request.data());
-            if (pdfBytes.length == 0) {
-                throw new IllegalArgumentException("PDF data is empty");
-            }
+            validatePdf(pdfBytes, request.mimeType());
 
             String fileName = request.fileName() == null || request.fileName().isBlank()
                     ? "uploaded.pdf"
@@ -256,7 +271,9 @@ public class SurveyServiceImpl implements SurveyService {
     public ArticleDto importPdfArticle(String surveyId, MultipartFile file, AddedByDto addedBy) {
         Survey survey = getSurveyOrThrow(surveyId);
         AddedByDto author = addedBy == null ? new AddedByDto("owner", "Survey Owner", "Owner") : addedBy;
-        ArticleMetadata metadata = pdfExtractorService.extractFromBytes(readBytes(file), file.getOriginalFilename());
+        byte[] bytes = readBytes(file);
+        validatePdf(bytes, file.getContentType());
+        ArticleMetadata metadata = pdfExtractorService.extractFromBytes(bytes, file.getOriginalFilename());
         return toArticleDto(saveImportedArticle(survey, author, metadata, file.getOriginalFilename()));
     }
 
@@ -265,7 +282,7 @@ public class SurveyServiceImpl implements SurveyService {
     public ArticleDto updateArticle(String surveyId, String articleId, ArticleUpdateRequest request, String authorizationHeader) {
         Survey survey = getSurveyOrThrow(surveyId);
         Article article = articleRepository.findByExternalId(articleId)
-                .filter(item -> surveyId.equals(item.getSurveyExternalId()))
+                .filter(item -> belongsToSurvey(item, survey))
                 .orElseThrow(() -> new EntityNotFoundException("Article not found: " + articleId));
 
         AppUser currentUser = currentUserRequired(authorizationHeader);
@@ -280,7 +297,7 @@ public class SurveyServiceImpl implements SurveyService {
             article.setJournal(request.journal().trim());
         }
         if (request.doi() != null) {
-            article.setDoi(request.doi().isBlank() ? null : request.doi().trim());
+            article.setDoi(request.doi().isBlank() ? null : normalizeDoi(request.doi()));
         }
         if (request.status() != null && !request.status().isBlank()) {
             article.setStatus(request.status().trim());
@@ -306,7 +323,7 @@ public class SurveyServiceImpl implements SurveyService {
     public void deleteArticle(String surveyId, String articleId, String authorizationHeader) {
         Survey survey = getSurveyOrThrow(surveyId);
         Article article = articleRepository.findByExternalId(articleId)
-                .filter(item -> surveyId.equals(item.getSurveyExternalId()))
+                .filter(item -> belongsToSurvey(item, survey))
                 .orElseThrow(() -> new EntityNotFoundException("Article not found: " + articleId));
 
         AppUser currentUser = currentUserRequired(authorizationHeader);
@@ -468,8 +485,8 @@ public class SurveyServiceImpl implements SurveyService {
     private ArticleMetadata metadataFromBibEntry(BibEntry entry) {
         ArticleMetadata metadata = new ArticleMetadata();
         metadata.setTitle(entry.getTitle());
-        metadata.setDoi(entry.getDoi());
-        metadata.setUrl(entry.getUrl());
+        metadata.setDoi(normalizeDoi(entry.getDoi()));
+        metadata.setUrl(normalizeExternalUrl(entry.getUrl()));
         metadata.setJournal(entry.getJournal());
         if (entry.getYear() != null && !entry.getYear().isBlank()) {
             try {
@@ -525,7 +542,7 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private ArticleMetadata resolveMetadataFromDoi(String rawInput) {
-        String doi = extractDoi(rawInput);
+        String doi = normalizeDoi(rawInput);
         if (doi == null || doi.isBlank()) {
             ArticleMetadata fallback = new ArticleMetadata();
             fallback.setTitle(extractTitleFromUrl(rawInput));
@@ -533,35 +550,24 @@ public class SurveyServiceImpl implements SurveyService {
             return fallback;
         }
 
-        ArticleMetadata bibtex = fetchDoiBibtexMetadata(doi);
-        if (isMetadataUsable(bibtex)) {
-            return bibtex;
-        }
+        ArticleMetadata resolved = new ArticleMetadata();
+        resolved.setDoi(doi);
 
-        ArticleMetadata crossref = fetchCrossrefMetadata(doi);
-        if (isMetadataUsable(crossref)) {
-            return crossref;
-        }
+        // Crossref generally provides the most complete structured title, author,
+        // publication and date metadata. Other providers only fill missing fields.
+        resolved = mergeMissingMetadata(resolved, fetchCrossrefMetadata(doi));
+        resolved = mergeMissingMetadata(resolved, fetchDoiOrgMetadata(doi));
+        resolved = mergeMissingMetadata(resolved, fetchDoiBibtexMetadata(doi));
+        resolved = mergeMissingMetadata(resolved, fetchLandingPageMetadata(doi));
 
-        ArticleMetadata doiOrg = fetchDoiOrgMetadata(doi);
-        if (isMetadataUsable(doiOrg)) {
-            return doiOrg;
+        if (!hasDescriptiveMetadata(resolved)) {
+            resolved.setTitle(extractTitleFromDoi(doi));
         }
-
-        ArticleMetadata landingPage = fetchLandingPageMetadata(doi);
-        if (isMetadataUsable(landingPage)) {
-            return landingPage;
-        }
-
-        ArticleMetadata fallback = new ArticleMetadata();
-        fallback.setDoi(doi);
-        fallback.setTitle(extractTitleFromDoi(doi));
-        return fallback;
+        return resolved;
     }
 
     private ArticleMetadata fetchDoiBibtexMetadata(String doi) {
-        String encoded = URLEncoder.encode(doi, StandardCharsets.UTF_8);
-        String apiUrl = "https://doi.org/" + encoded;
+        URI apiUri = doiUri("https://doi.org", doi);
 
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -569,7 +575,7 @@ public class SurveyServiceImpl implements SurveyService {
             headers.set(HttpHeaders.USER_AGENT, "literature-review-assistant/1.0 (mailto:unknown@example.com)");
 
             ResponseEntity<String> response = restTemplate.exchange(
-                    apiUrl,
+                    apiUri,
                     HttpMethod.GET,
                     new HttpEntity<>(headers),
                     String.class
@@ -590,8 +596,7 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private ArticleMetadata fetchCrossrefMetadata(String doi) {
-        String encoded = URLEncoder.encode(doi, StandardCharsets.UTF_8);
-        String apiUrl = "https://api.crossref.org/works/" + encoded;
+        URI apiUri = doiUri("https://api.crossref.org/works", doi);
 
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -599,7 +604,7 @@ public class SurveyServiceImpl implements SurveyService {
             headers.set(HttpHeaders.USER_AGENT, "literature-review-assistant/1.0 (mailto:unknown@example.com)");
 
             ResponseEntity<Map> response = restTemplate.exchange(
-                    apiUrl,
+                    apiUri,
                     HttpMethod.GET,
                     new HttpEntity<>(headers),
                     Map.class
@@ -618,9 +623,62 @@ public class SurveyServiceImpl implements SurveyService {
         return new ArticleMetadata();
     }
 
+    @SuppressWarnings("unchecked")
+    private ArticleMetadata fetchCrossrefMetadataByTitle(String title, Integer year) {
+        if (!hasText(title)) {
+            return new ArticleMetadata();
+        }
+
+        URI apiUri = UriComponentsBuilder.fromUriString("https://api.crossref.org/works")
+                .queryParam("query.title", title)
+                .queryParam("rows", 5)
+                .build()
+                .encode()
+                .toUri();
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+            headers.set(HttpHeaders.USER_AGENT, "literature-review-assistant/1.0 (mailto:unknown@example.com)");
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    apiUri,
+                    HttpMethod.GET,
+                    new HttpEntity<>(headers),
+                    Map.class
+            );
+            Object message = response.getBody() == null ? null : response.getBody().get("message");
+            if (!(message instanceof Map<?, ?> messageMap) || !(messageMap.get("items") instanceof List<?> items)) {
+                return new ArticleMetadata();
+            }
+
+            String normalizedTitle = normalizeTitle(title);
+            ArticleMetadata best = null;
+            double bestScore = 0;
+            for (Object item : items) {
+                if (!(item instanceof Map<?, ?> rawItem)) {
+                    continue;
+                }
+                ArticleMetadata candidate = metadataFromCrossref((Map<String, Object>) rawItem, null);
+                double score = titleSimilarity(normalizedTitle, normalizeTitle(candidate.getTitle()));
+                if (year != null && candidate.getYear() != null && year.equals(candidate.getYear())) {
+                    score += 0.2;
+                }
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = candidate;
+                }
+            }
+
+            return bestScore >= 0.65 && best != null ? best : new ArticleMetadata();
+        } catch (Exception e) {
+            System.err.println("Crossref title lookup failed for " + title + ": " + e.getMessage());
+            return new ArticleMetadata();
+        }
+    }
+
     private ArticleMetadata fetchDoiOrgMetadata(String doi) {
-        String encoded = URLEncoder.encode(doi, StandardCharsets.UTF_8);
-        String apiUrl = "https://doi.org/" + encoded;
+        URI apiUri = doiUri("https://doi.org", doi);
 
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -628,7 +686,7 @@ public class SurveyServiceImpl implements SurveyService {
             headers.set(HttpHeaders.USER_AGENT, "literature-review-assistant/1.0 (mailto:unknown@example.com)");
 
             ResponseEntity<Map> response = restTemplate.exchange(
-                    apiUrl,
+                    apiUri,
                     HttpMethod.GET,
                     new HttpEntity<>(headers),
                     Map.class
@@ -646,10 +704,10 @@ public class SurveyServiceImpl implements SurveyService {
 
     private ArticleMetadata metadataFromCrossref(Map<String, Object> message, String doi) {
         ArticleMetadata metadata = new ArticleMetadata();
-        metadata.setDoi(stringValue(message.getOrDefault("DOI", doi)));
+        metadata.setDoi(normalizeDoi(stringValue(message.getOrDefault("DOI", doi))));
         metadata.setTitle(firstTextValue(message.get("title")));
         metadata.setAbstractText(cleanCrossrefAbstract(stringValue(message.get("abstract"))));
-        metadata.setUrl(stringValue(message.get("URL")));
+        metadata.setUrl(normalizeExternalUrl(stringValue(message.get("URL"))));
         metadata.setJournal(firstTextValue(message.get("container-title")));
         metadata.setAuthorNames(parseCrossrefAuthors(message.get("author")));
         Integer year = extractCrossrefYear(message);
@@ -664,10 +722,10 @@ public class SurveyServiceImpl implements SurveyService {
 
     private ArticleMetadata metadataFromDoiOrg(Map<String, Object> message, String doi) {
         ArticleMetadata metadata = new ArticleMetadata();
-        metadata.setDoi(defaultString(stringValue(message.getOrDefault("DOI", doi)), doi));
+        metadata.setDoi(normalizeDoi(defaultString(stringValue(message.getOrDefault("DOI", doi)), doi)));
         metadata.setTitle(firstTextValue(message.get("title")));
         metadata.setAbstractText(cleanCrossrefAbstract(stringValue(message.get("abstract"))));
-        metadata.setUrl(stringValue(message.get("URL")));
+        metadata.setUrl(normalizeExternalUrl(stringValue(message.get("URL"))));
         metadata.setJournal(firstTextValue(message.get("container-title")));
         metadata.setAuthorNames(parseDoiOrgAuthors(message.get("author")));
         Integer year = extractDoiOrgYear(message);
@@ -681,7 +739,7 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private ArticleMetadata fetchLandingPageMetadata(String doi) {
-        String apiUrl = "https://doi.org/" + URLEncoder.encode(doi, StandardCharsets.UTF_8);
+        URI apiUri = doiUri("https://doi.org", doi);
 
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -689,20 +747,29 @@ public class SurveyServiceImpl implements SurveyService {
             headers.set(HttpHeaders.USER_AGENT, "literature-review-assistant/1.0 (mailto:unknown@example.com)");
 
             ResponseEntity<String> response = restTemplate.exchange(
-                    apiUrl,
+                    apiUri,
                     HttpMethod.GET,
                     new HttpEntity<>(headers),
                     String.class
             );
 
             if (response.getBody() != null) {
-                return metadataFromHtml(response.getBody(), doi, apiUrl);
+                return metadataFromHtml(response.getBody(), doi, apiUri.toString());
             }
         } catch (Exception e) {
             System.err.println("DOI landing page lookup failed for DOI " + doi + ": " + e.getMessage());
         }
 
         return new ArticleMetadata();
+    }
+
+    private URI doiUri(String baseUrl, String doi) {
+        return UriComponentsBuilder.fromUriString(baseUrl)
+                .path("/")
+                .path(doi)
+                .build()
+                .encode()
+                .toUri();
     }
 
     private ArticleMetadata metadataFromHtml(String html, String doi, String sourceUrl) {
@@ -774,32 +841,35 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private Article saveImportedArticle(Survey survey, AddedByDto addedBy, ArticleMetadata metadata, String fallbackFileName) {
-        // 1. Double check if the article already exists by DOI to prevent duplication
-        if (metadata.getDoi() != null && !metadata.getDoi().isBlank()) {
-            Optional<Article> existing = articleRepository.findByDoi(metadata.getDoi());
-            if (existing.isPresent()) {
-                Article existingArticle = existing.get();
+        metadata.setDoi(normalizeDoi(metadata.getDoi()));
+        metadata.setUrl(normalizeExternalUrl(metadata.getUrl()));
 
-                // Link existing article to the new survey if not linked already
-                boolean alreadyLinked = existingArticle.getSurveyLinks().stream()
-                        .anyMatch(link -> link.getSurvey().getSurveyId().equals(survey.getSurveyId()));
-
-                if (!alreadyLinked) {
-                    ArticleSurvey link = new ArticleSurvey();
-                    link.setArticle(existingArticle);
-                    link.setSurvey(survey);
-                    link.setStatus(mk.ukim.finki.literaturereviewassistant.model.ArticleStatus.INCLUDED);
-
-                    existingArticle.getSurveyLinks().add(link);
-                    survey.getArticleLinks().add(link);
-
-                    return articleRepository.save(existingArticle);
-                }
-                return existingArticle;
+        byte[] pdfBytes = metadata.getPdfBytes();
+        if (pdfBytes != null && pdfBytes.length > 0) {
+            String checksum = sha256(pdfBytes);
+            Optional<Document> existingDocument = documentRepository.findFirstByChecksumSha256(checksum);
+            if (existingDocument.isPresent()) {
+                return linkArticleToSurvey(existingDocument.get().getArticle(), survey);
             }
         }
 
-        // 2. Build the new Article entity
+        if (hasText(metadata.getDoi())) {
+            Optional<Article> existing = articleRepository.findByDoi(metadata.getDoi());
+            if (existing.isPresent()) {
+                Article existingArticle = existing.get();
+                enrichExistingArticle(existingArticle, metadata);
+                return linkArticleToSurvey(existingArticle, survey);
+            }
+        }
+
+        if (hasText(metadata.getTitle()) && metadata.getYear() != null) {
+            Optional<Article> existing = articleRepository
+                    .findFirstByTitleIgnoreCaseAndPublicationYear(metadata.getTitle().trim(), metadata.getYear());
+            if (existing.isPresent()) {
+                return linkArticleToSurvey(existing.get(), survey);
+            }
+        }
+
         Article article = new Article();
         article.setExternalId("article-" + UUID.randomUUID());
         article.setSurveyExternalId(survey.getExternalId());
@@ -833,30 +903,58 @@ public class SurveyServiceImpl implements SurveyService {
                 (hasText(metadata.getTitle()) || hasText(metadata.getDoi()) || hasText(metadata.getAbstractText()));
     }
 
+    private boolean hasDescriptiveMetadata(ArticleMetadata metadata) {
+        return metadata != null && (
+                hasText(metadata.getTitle())
+                        || hasText(metadata.getJournal())
+                        || (metadata.getAuthorNames() != null && !metadata.getAuthorNames().isEmpty())
+        );
+    }
+
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
 
     private boolean looksLikeDoi(String input) {
-        String lower = input.toLowerCase();
+        String lower = input.toLowerCase(Locale.ROOT);
         return input.startsWith("10.") || lower.contains("doi.org/") || lower.startsWith("doi:");
     }
 
     private String extractDoi(String input) {
+        return normalizeDoi(input);
+    }
+
+    String normalizeDoi(String input) {
+        if (input == null || input.isBlank()) {
+            return null;
+        }
+
         String trimmed = input.trim();
-        if (trimmed.toLowerCase().startsWith("doi:")) {
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("doi:")) {
             trimmed = trimmed.substring(4).trim();
         }
-        int doiIndex = trimmed.toLowerCase().indexOf("doi.org/");
-        if (doiIndex >= 0) {
-            trimmed = trimmed.substring(doiIndex + "doi.org/".length());
+
+        lower = trimmed.toLowerCase(Locale.ROOT);
+        for (String prefix : List.of(
+                "https://doi.org/",
+                "http://doi.org/",
+                "https://dx.doi.org/",
+                "http://dx.doi.org/"
+        )) {
+            if (lower.startsWith(prefix)) {
+                trimmed = trimmed.substring(prefix.length());
+                break;
+            }
         }
+
         trimmed = trimmed.replaceAll("[?#].*$", "").trim();
         try {
-            return URLDecoder.decode(trimmed, StandardCharsets.UTF_8);
+            trimmed = URLDecoder.decode(trimmed, StandardCharsets.UTF_8);
         } catch (Exception e) {
-            return trimmed;
+            // Keep the undecoded DOI when malformed percent escapes are supplied.
         }
+        return trimmed.replaceAll("^[\\s<]+|[\\s>.,;]+$", "").toLowerCase(Locale.ROOT);
     }
 
     private String extractTitleFromDoi(String doi) {
@@ -877,6 +975,117 @@ public class SurveyServiceImpl implements SurveyService {
 
     private String defaultString(String value, String fallback) {
         return hasText(value) ? value.trim() : fallback;
+    }
+
+    private String normalizeExternalUrl(String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+
+        try {
+            URI uri = URI.create(value.trim());
+            String scheme = uri.getScheme();
+            if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+                return null;
+            }
+            return uri.toString();
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private ArticleMetadata mergeMissingMetadata(ArticleMetadata primary, ArticleMetadata fallback) {
+        if (fallback == null) {
+            return primary;
+        }
+        if (!hasText(primary.getTitle())) primary.setTitle(fallback.getTitle());
+        if (!hasText(primary.getDoi())) primary.setDoi(normalizeDoi(fallback.getDoi()));
+        if (!hasText(primary.getUrl())) primary.setUrl(normalizeExternalUrl(fallback.getUrl()));
+        if (!hasText(primary.getJournal())) primary.setJournal(fallback.getJournal());
+        if (!hasText(primary.getAbstractText())) primary.setAbstractText(fallback.getAbstractText());
+        if (primary.getYear() == null) primary.setYear(fallback.getYear());
+        if ((primary.getAuthorNames() == null || primary.getAuthorNames().isEmpty())
+                && fallback.getAuthorNames() != null) {
+            primary.setAuthorNames(fallback.getAuthorNames());
+        }
+        return primary;
+    }
+
+    private String normalizeTitle(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}]+", " ")
+                .trim();
+    }
+
+    private double titleSimilarity(String left, String right) {
+        if (left.isBlank() || right.isBlank()) {
+            return 0;
+        }
+        if (left.equals(right)) {
+            return 1;
+        }
+        var leftWords = new java.util.HashSet<>(List.of(left.split("\\s+")));
+        var rightWords = new java.util.HashSet<>(List.of(right.split("\\s+")));
+        var intersection = new java.util.HashSet<>(leftWords);
+        intersection.retainAll(rightWords);
+        var union = new java.util.HashSet<>(leftWords);
+        union.addAll(rightWords);
+        return union.isEmpty() ? 0 : (double) intersection.size() / union.size();
+    }
+
+    private Article linkArticleToSurvey(Article article, Survey survey) {
+        boolean alreadyLinked = article.getSurveyLinks().stream()
+                .anyMatch(link -> link.getSurvey().getSurveyId().equals(survey.getSurveyId()));
+        if (!alreadyLinked) {
+            ArticleSurvey link = new ArticleSurvey();
+            link.setArticle(article);
+            link.setSurvey(survey);
+            link.setStatus(mk.ukim.finki.literaturereviewassistant.model.ArticleStatus.PENDING);
+            article.getSurveyLinks().add(link);
+            survey.getArticleLinks().add(link);
+        }
+        return articleRepository.save(article);
+    }
+
+    private boolean belongsToSurvey(Article article, Survey survey) {
+        if (article == null || survey == null) {
+            return false;
+        }
+        if (survey.getExternalId() != null && survey.getExternalId().equals(article.getSurveyExternalId())) {
+            return true;
+        }
+        return article.getSurveyLinks().stream()
+                .anyMatch(link -> link.getSurvey() != null
+                        && survey.getExternalId() != null
+                        && survey.getExternalId().equals(link.getSurvey().getExternalId()));
+    }
+
+    private void enrichExistingArticle(Article article, ArticleMetadata metadata) {
+        if ((!hasText(article.getTitle()) || article.getTitle().startsWith("Imported article for "))
+                && hasText(metadata.getTitle())) {
+            article.setTitle(metadata.getTitle().trim());
+        }
+        if ((!hasText(article.getJournal()) || "Imported Journal".equals(article.getJournal()))
+                && hasText(metadata.getJournal())) {
+            article.setJournal(metadata.getJournal().trim());
+        }
+        if ((!hasText(article.getArticleAbstract())
+                || "This article was imported and needs to be reviewed.".equals(article.getArticleAbstract()))
+                && hasText(metadata.getAbstractText())) {
+            article.setArticleAbstract(metadata.getAbstractText().trim());
+        }
+        if (!hasText(article.getUrl()) && hasText(metadata.getUrl())) {
+            article.setUrl(normalizeExternalUrl(metadata.getUrl()));
+        }
+        if (metadata.getYear() != null
+                && (article.getPublicationYear() == null || article.getPublicationYear().equals(LocalDate.now().getYear()))) {
+            article.setPublicationYear(metadata.getYear());
+        }
+        if ((article.getAuthors() == null || article.getAuthors().isEmpty())
+                && metadata.getAuthorNames() != null
+                && !metadata.getAuthorNames().isEmpty()) {
+            article.setAuthors(resolveOrCreateAuthors(metadata.getAuthorNames()));
+        }
     }
 
     private String firstMatchingMeta(String html, String... names) {
@@ -1080,20 +1289,24 @@ public class SurveyServiceImpl implements SurveyService {
         if (currentUser.isEmpty()) {
             return List.of();
         }
+
+        Reviewer reviewer = reviewerRepository.findById(currentUser.get().getId()).orElse(null);
+
         if (currentUser.map(u -> u.getRole().equals("ADMIN")).orElse(false)) {
-            return surveyRepository.findAll().stream().map(this::toSurveyDto).toList();
+            return surveyRepository.findAll().stream()
+                    .map(survey -> toSurveyDto(survey, reviewer)) // 🟢 Pass the found reviewer profile
+                    .toList();
         }
-        // For non-admin users: only show surveys where they are the Owner.
-        // Surveys they are assigned to review (Reviewer role) are available via /api/reviews/surveys.
+
         return surveyRepository.findAll().stream()
                 .filter(survey -> survey.getReviewers().stream()
-                        .anyMatch(contributor ->
-                                contributor.getEmail().equals(currentUser.get().getEmail())
+                        .anyMatch(contributor -> contributor.getEmail() != null
+                                && currentUser.get().getEmail() != null
+                                && contributor.getEmail().equalsIgnoreCase(currentUser.get().getEmail())
                                 && "Owner".equals(contributor.getRole())))
-                .map(this::toSurveyDto)
+                .map(survey -> toSurveyDto(survey, reviewer)) // 🟢 Pass the found reviewer profile
                 .toList();
     }
-
     private void ensureOwner(Survey survey, String authorizationHeader) {
         Optional<AppUser> currentUserOpt = currentUser(authorizationHeader);
 
@@ -1105,7 +1318,6 @@ public class SurveyServiceImpl implements SurveyService {
         if (currentUserOpt.isPresent()) {
             AppUser user = currentUserOpt.get();
 
-// <<<<<<< sandbox_combined
 //             // 2. Look up if this user already has an Owner Reviewer record (by AppUser + role).
 //             //    Since a user can also be a Reviewer on other surveys, we need to find specifically
 //             //    their "Owner" record (or create one if it doesn't exist yet).
@@ -1197,36 +1409,34 @@ public class SurveyServiceImpl implements SurveyService {
             }
 
             reviewerRepository.save(fallbackOwner);
-// >>>>>>> sandbox_branch
         }
         // No fallback for unauthenticated requests — survey creation requires auth
     }
 
-    private SurveyDto toSurveyDto(Survey survey) {
-        if (survey == null) return null;
+    private SurveyDto toSurveyDto(Survey survey, Reviewer reviewer) {
+        String extId = survey == null ? null : survey.getExternalId();
+        List<Article> articles = survey == null ? List.of() : articleRepository.findBySurveyLinks_Survey(survey);
+        int articleCount = articles == null ? 0 : articles.size();
 
-        int articleCount = 0;
-        String extId = survey.getExternalId();
+        int reviewedCount = 0;
+        if (survey != null && reviewer != null && articles != null) {
+            List<Review> reviewerByList = reviewRepository.findByReviewer(reviewer);
 
-        // Safely check if articles exist without breaking the session proxy
-        if (extId != null && !extId.isBlank()) {
-            // If your Survey entity has @OneToMany List<ArticleSurvey> articleLinks, use that instead to avoid repository overhead:
-            // articleCount = survey.getArticleLinks() != null ? survey.getArticleLinks().size() : 0;
-
-            // Otherwise, use this safe defensive repository fallback:
-            List<Article> articles = articleRepository.findBySurveyExternalId(extId);
-            if (articles != null) {
-                articleCount = articles.size();
-            }
+            reviewedCount = (int) articles.stream()
+                    .filter(article -> reviewerByList.stream()
+                            .anyMatch(review -> review.getArticle() != null
+                                    && review.getArticle().getArticleId().equals(article.getArticleId())))
+                    .count();
         }
 
         return new SurveyDto(
                 extId,
-                survey.getTitle() != null ? survey.getTitle() : "Untitled Survey",
-                survey.getDescription(),
-                safeDate(survey.getCreatedDate()),
-                survey.getStatus() != null ? survey.getStatus() : "Draft",
-                articleCount
+                survey != null && survey.getTitle() != null ? survey.getTitle() : "Untitled Survey",
+                survey != null ? survey.getDescription() : null,
+                survey != null ? safeDate(survey.getCreatedDate()) : null,
+                survey != null && survey.getStatus() != null ? survey.getStatus() : "Draft",
+                articleCount,
+                reviewedCount
         );
     }
 
@@ -1257,6 +1467,25 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     public ArticleDto toArticleDto(Article article) {
+        boolean hasPdf = article.getDocuments() != null && article.getDocuments().stream()
+                .anyMatch(document -> document.getType() == DocumentType.PDF
+                        && ((document.getFilePath() != null && !document.getFilePath().isBlank())
+                        || (document.getPdfContent() != null && document.getPdfContent().length > 0)));
+        String pdfUrl = hasPdf ? "/api/surveys/articles/" + article.getExternalId() + "/pdf" : null;
+        String doiUrl = hasText(article.getDoi()) ? "https://doi.org/" + normalizeDoi(article.getDoi()) : null;
+        String candidateExternalUrl = normalizeExternalUrl(article.getUrl());
+        String externalUrl = isDoiResolverUrl(candidateExternalUrl, article.getDoi()) ? null : candidateExternalUrl;
+        String scholarlySearchUrl = !hasPdf && externalUrl == null && doiUrl == null && hasText(article.getTitle())
+                ? "https://scholar.google.com/scholar?q=" + URLEncoder.encode(article.getTitle(), StandardCharsets.UTF_8)
+                : null;
+        String openUrl = hasPdf ? pdfUrl : externalUrl != null ? externalUrl : doiUrl != null ? doiUrl : scholarlySearchUrl;
+        String openType = hasPdf ? "pdf" : externalUrl != null ? "external" : doiUrl != null ? "doi"
+                : scholarlySearchUrl != null ? "external" : null;
+        Review latestReview = article.getArticleId() == null ? null
+                : reviewRepository.findTopByArticle_ArticleIdOrderByReviewIdDesc(article.getArticleId()).orElse(null);
+        String reviewedBy = latestReview != null && latestReview.getReviewer() != null ? latestReview.getReviewer().getName() : null;
+        String reviewText = latestReview != null ? reviewDisplayText(latestReview.getJsonResponse()) : null;
+
         return new ArticleDto(
                 article.getExternalId(),
                 article.getTitle(),
@@ -1267,8 +1496,46 @@ public class SurveyServiceImpl implements SurveyService {
                 article.getStatus(),
                 article.getArticleAbstract(),
                 article.getInclusionSummary(),
-                article.getAddedById() == null ? null : new AddedByDto(article.getAddedById(), article.getAddedByName(), article.getAddedByRole())
+                article.getAddedById() == null ? null : new AddedByDto(article.getAddedById(), article.getAddedByName(), article.getAddedByRole()),
+                externalUrl,
+                openUrl,
+                openType,
+                hasPdf,
+                pdfUrl,
+                reviewedBy,
+                reviewText
         );
+    }
+
+    private String reviewDisplayText(String jsonResponse) {
+        if (jsonResponse == null || jsonResponse.isBlank()) {
+            return null;
+        }
+        try {
+            java.util.Map<?, ?> map = new com.fasterxml.jackson.databind.ObjectMapper().readValue(jsonResponse, java.util.Map.class);
+            Object note = map.get("note");
+            if (note != null && !note.toString().isBlank()) {
+                return note.toString();
+            }
+            Object decision = map.get("decision");
+            if (decision != null && !decision.toString().isBlank()) {
+                return decision.toString();
+            }
+        } catch (Exception ignored) {
+        }
+        return jsonResponse;
+    }
+
+    private boolean isDoiResolverUrl(String url, String doi) {
+        if (!hasText(url) || !hasText(doi)) {
+            return false;
+        }
+        String normalizedUrl = url.toLowerCase(Locale.ROOT)
+                .replace("http://dx.doi.org/", "")
+                .replace("https://dx.doi.org/", "")
+                .replace("http://doi.org/", "")
+                .replace("https://doi.org/", "");
+        return normalizeDoi(normalizedUrl).equals(normalizeDoi(doi));
     }
 
     public ReviewerDto toReviewerDto(Reviewer reviewer) {
@@ -1287,28 +1554,136 @@ public class SurveyServiceImpl implements SurveyService {
             return;
         }
 
-        try {
-            Path directory = Path.of("storage", "pdfs", article.getSurveyExternalId());
-            Files.createDirectories(directory);
+        String safeFileName = safeDownloadFileName(fallbackFileName, article.getExternalId());
+        Document document = new Document();
+        document.setTitle(defaultString(metadata.getTitle(), safeFileName));
+        document.setType(DocumentType.PDF);
+        document.setFilePath(storePdfFile(pdfBytes, article.getExternalId(), safeFileName));
+        document.setExtractedText(defaultString(metadata.getAbstractText(), null));
+        document.setMimeType(MediaType.APPLICATION_PDF_VALUE);
+        document.setOriginalFileName(safeFileName);
+        document.setChecksumSha256(sha256(pdfBytes));
+        document.setArticle(article);
+        article.getDocuments().add(document);
+    }
 
-            String safeFileName = sanitizeFileName(defaultString(fallbackFileName, article.getExternalId() + ".pdf"));
-            if (!safeFileName.toLowerCase().endsWith(".pdf")) {
-                safeFileName = safeFileName + ".pdf";
+    private void validatePdf(byte[] bytes, String mimeType) {
+        if (bytes == null || bytes.length == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "PDF file is empty");
+        }
+        if (bytes.length > maxPdfSize) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "PDF exceeds the configured upload limit");
+        }
+        if (mimeType != null && !mimeType.isBlank() && !MediaType.APPLICATION_PDF_VALUE.equalsIgnoreCase(mimeType)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only application/pdf files are accepted");
+        }
+        if (bytes.length < 5
+                || bytes[0] != '%'
+                || bytes[1] != 'P'
+                || bytes[2] != 'D'
+                || bytes[3] != 'F'
+                || bytes[4] != '-') {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Uploaded file is not a valid PDF");
+        }
+    }
+
+    private String sha256(byte[] bytes) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to checksum PDF", e);
+        }
+    }
+
+    private String safeDownloadFileName(String requestedName, String articleId) {
+        String safe = sanitizeFileName(defaultString(requestedName, articleId + ".pdf"));
+        if (safe.isBlank()) {
+            safe = articleId + ".pdf";
+        }
+        if (!safe.toLowerCase(Locale.ROOT).endsWith(".pdf")) {
+            safe += ".pdf";
+        }
+        return safe;
+    }
+
+    private String storePdfFile(byte[] bytes, String articleId, String requestedName) {
+        try {
+            Path storageDir = ensurePdfStorageDir();
+            String checksum = sha256(bytes);
+            String baseName = sanitizeFileName(defaultString(requestedName, articleId + ".pdf"));
+            if (baseName.isBlank()) {
+                baseName = articleId + ".pdf";
             }
 
-            Path filePath = directory.resolve(article.getExternalId() + "-" + safeFileName);
-            Files.write(filePath, pdfBytes);
+            String fileName = articleId + "-" + checksum.substring(0, 12) + "-" + baseName;
+            Path target = storageDir.resolve(fileName).normalize();
+            if (!target.startsWith(storageDir)) {
+                throw new IllegalStateException("Resolved PDF path escapes storage directory");
+            }
 
-            Document document = new Document();
-            document.setTitle(defaultString(metadata.getTitle(), safeFileName));
-            document.setType(DocumentType.PDF);
-            document.setFilePath(filePath.toString());
-            document.setExtractedText(defaultString(metadata.getAbstractText(), null));
-            document.setArticle(article);
-            article.getDocuments().add(document);
+            Files.write(target, bytes);
+            return fileName;
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to store uploaded PDF", e);
+            throw new IllegalStateException("Unable to store PDF on disk", e);
         }
+    }
+
+    private byte[] readPdfBytes(Document document, Article article) {
+        if (document == null) {
+            throw new EntityNotFoundException("PDF not found for article: " + article.getExternalId());
+        }
+
+        if (document.getFilePath() != null && !document.getFilePath().isBlank()) {
+            try {
+                Path resolved = resolveStoredPdfPath(document.getFilePath());
+                if (!Files.exists(resolved)) {
+                    throw new EntityNotFoundException("PDF not found for article: " + article.getExternalId());
+                }
+                return Files.readAllBytes(resolved);
+            } catch (EntityNotFoundException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "PDF could not be opened", e);
+            }
+        }
+
+        if (document.getPdfContent() != null && document.getPdfContent().length > 0) {
+            return document.getPdfContent();
+        }
+
+        throw new EntityNotFoundException("PDF not found for article: " + article.getExternalId());
+    }
+
+    private Path ensurePdfStorageDir() throws Exception {
+        Path storageDir = Path.of(paperStorageDir).toAbsolutePath().normalize();
+        Files.createDirectories(storageDir);
+        return storageDir;
+    }
+
+    private Path resolveStoredPdfPath(String relativePath) throws Exception {
+        Path storageDir = ensurePdfStorageDir();
+        Path resolved = storageDir.resolve(relativePath).normalize();
+        if (!resolved.startsWith(storageDir)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid PDF path");
+        }
+        if (Files.exists(resolved)) {
+            return resolved;
+        }
+
+        for (Path legacyBase : legacyPdfStorageBases()) {
+            Path legacyResolved = legacyBase.resolve(relativePath).normalize();
+            if (legacyResolved.startsWith(legacyBase) && Files.exists(legacyResolved)) {
+                return legacyResolved;
+            }
+        }
+        return resolved;
+    }
+
+    private List<Path> legacyPdfStorageBases() {
+        return List.of(
+                Path.of(System.getProperty("user.home"), ".literature-review-assistant", "papers").toAbsolutePath().normalize(),
+                Path.of("/app/uploads/papers").toAbsolutePath().normalize()
+        );
     }
 
     private void deleteStoredFiles(Article article) {
@@ -1322,7 +1697,7 @@ public class SurveyServiceImpl implements SurveyService {
             }
 
             try {
-                Files.deleteIfExists(Path.of(document.getFilePath()));
+                Files.deleteIfExists(resolveStoredPdfPath(document.getFilePath()));
             } catch (Exception e) {
                 System.err.println("Failed to delete stored file " + document.getFilePath() + ": " + e.getMessage());
             }
@@ -1363,6 +1738,19 @@ public class SurveyServiceImpl implements SurveyService {
 
         String currentUserId = currentUser.getId() == null ? null : currentUser.getId().toString();
         return equalsAnyIgnoreCase(article.getAddedById(), currentUserId, currentUser.getEmail());
+    }
+
+    private boolean canAccessArticle(Article article, AppUser currentUser) {
+        if ("ADMIN".equalsIgnoreCase(currentUser.getRole())) {
+            return true;
+        }
+
+        return article.getSurveyLinks().stream()
+                .map(ArticleSurvey::getSurvey)
+                .flatMap(survey -> reviewerRepository.findBySurveysContaining(survey).stream())
+                .anyMatch(reviewer -> reviewer.getEmail() != null
+                        && currentUser.getEmail() != null
+                        && reviewer.getEmail().equalsIgnoreCase(currentUser.getEmail()));
     }
 
     private boolean isCurrentUserSurveyOwner(Survey survey, AppUser currentUser) {
@@ -1436,7 +1824,11 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private String sanitizeFileName(String fileName) {
-        return fileName.replaceAll("[\\\\/:*?\"<>|]+", "_").trim();
+        return fileName
+                .replaceAll("[\\\\/:*?\"<>|]+", "_")
+                .replace("..", "_")
+                .replaceAll("[\\p{Cntrl}]+", "")
+                .trim();
     }
 
     private String buildSurveyContext(Survey survey, List<Article> articles) {

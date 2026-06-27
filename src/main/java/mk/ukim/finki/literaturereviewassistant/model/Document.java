@@ -22,6 +22,17 @@ public class Document {
     @Column(columnDefinition = "TEXT")
     private String extractedText;
 
+    @Deprecated
+    @Column(name = "pdf_content", columnDefinition = "bytea", insertable = false, updatable = false)
+    private byte[] pdfContent;
+
+    private String mimeType;
+
+    private String originalFileName;
+
+    @Column(length = 64)
+    private String checksumSha256;
+
     @ManyToOne
     @JoinColumn(name = "article_id")
     private Article article;

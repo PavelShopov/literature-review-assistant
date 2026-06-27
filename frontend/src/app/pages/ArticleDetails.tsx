@@ -1,14 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import {
     Sparkles,
-    CheckCircle,
     ExternalLink,
     Calendar,
     BookOpen,
     User,
-    Copy,
-    HelpCircle,
     RefreshCw,
     Save,
     CheckSquare,
@@ -40,8 +37,7 @@ interface ArticleDto {
     doi: string;
     url: string;
     status: string;
-    articleAbstract?: string;
-    abstractText?: string;
+    abstract?: string;
     inclusionSummary?: string;
     addedById?: string;
     addedByName?: string;
@@ -55,69 +51,87 @@ interface ArticleDto {
     llm_classifications?: Record<string, LlmClassification>;
 }
 
-// Fixed dimensions template for screening
-const TAXONOMY_DIMENSIONS = [
+// Master Taxonomy Mapping Directory with explicit tracking string identifiers
+const MASTER_TAXONOMY_DIMENSIONS = [
     {
+        id: "methodology",
         name: "Research Methodology",
         options: ["Empirical Study", "Theoretical Analysis", "System Design", "Literature Review", "Case Study"]
     },
     {
+        id: "dataset_context",
         name: "Target Dataset Context",
         options: ["Audio/Music", "Image Segmentation", "Text/NLP", "Synthetic Data", "Multi-modal"]
     },
     {
+        id: "framework_approach",
         name: "Model / Framework Approach",
         options: ["Deep Learning (CNN/Transformer)", "Classical ML / Statistical", "Reinforcement Learning", "Rule-Based / Heuristic", "Hybrid System"]
     },
     {
+        id: "evaluation_metrics",
         name: "Evaluation Metrics Utilized",
         options: ["Accuracy / F1-Score", "Loss / Perplexity", "Human Evaluation", "Throughput / Latency / Resource Cost", "Qualitative Analysis"]
     },
     {
+        id: "data_sourcing",
         name: "Data Sourcing Type",
         options: ["Public Benchmark Dataset", "Proprietary / Private Data", "Scraped / Web-Harvested", "Synthetically Generated", "Not Applicable"]
     },
     {
+        id: "research_focus",
         name: "Research Focus Area",
         options: ["Performance Optimization", "Security / Privacy / Robustness", "Explainability / Interpretability", "Novel Architecture Design", "Ethical / Bias Assessment"]
     },
     {
+        id: "application_domain",
         name: "Primary Application Domain",
         options: ["Healthcare / Medicine", "Finance / Economics", "Autonomous Systems / Robotics", "E-commerce / Marketing", "General Purpose Tooling"]
     },
     {
+        id: "computing_env",
         name: "Computing Environment",
         options: ["Cloud Infrastructure (AWS/GCP/Azure)", "On-Premises High-Performance Cluster", "Edge Devices / Internet of Things", "Local Workstation / Desktop", "Not Specified"]
     },
     {
+        id: "open_science",
         name: "Code Availability & Open Science",
         options: ["Public Repository (GitHub/GitLab)", "Available Upon Request", "No Code Provided", "Commercial Software / Closed Source"]
     },
     {
+        id: "learning_paradigm",
         name: "Learning Paradigm",
         options: ["Supervised Learning", "Unsupervised / Self-Supervised", "Semi-Supervised", "Few-Shot / Zero-Shot Learning", "Continual / Lifelong Learning"]
     },
     {
+        id: "model_size",
         name: "Scale of Parameters / Model Size",
         options: ["Small (<10M parameters)", "Medium (10M - 1B parameters)", "Large / LLM Scale (>1B parameters)", "Non-Parametric Model", "Not Stated"]
     },
     {
+        id: "hardware_reqs",
         name: "Hardware Requirements",
         options: ["Commodity CPU Only", "Single GPU Setup", "Multi-GPU / Distributed Cluster", "TPU / Specialized Accelerators", "Not Disclosed"]
     },
     {
+        id: "limitations",
         name: "Limitations Acknowledged",
         options: ["Computational Cost Constraints", "Data Scarcity / Quality Issues", "Generalizability Concerns", "Ethical or Safety Risks", "No Formal Limitations Discussed"]
     },
     {
+        id: "funding_source",
         name: "Funding Source Type",
         options: ["Government Grant (NSF/EU/etc.)", "Corporate / Industry Sponsored", "Academic Institutional Internal Funds", "Not Disclosed / Self-Funded"]
     },
     {
+        id: "target_audience",
         name: "Target Audience / Stakeholder",
         options: ["Academic Researchers", "Industry Practitioners / Engineers", "End-Users / Consumers", "Policy Makers / Regulators"]
     }
 ];
+
+// Fallback list of baseline IDs if user selection array is blank/missing
+const DEFAULT_CRITERIA_IDS = ["methodology", "framework_approach", "evaluation_metrics"];
 
 export default function ArticleDetails() {
     const { surveyId, articleId } = useParams<{ surveyId: string; articleId: string }>();
@@ -130,8 +144,16 @@ export default function ArticleDetails() {
     const [saving, setSaving] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
-    // User form annotations state
+    const [activeCriteriaIds, setActiveCriteriaIds] = useState<string[]>([]);
     const [annotations, setAnnotations] = useState<Record<string, UserAnnotation>>({});
+
+    // Filters down the displayed form areas
+    const filteredTaxonomyDimensions = React.useMemo(() => {
+        const targetingIds = activeCriteriaIds.length > 0 ? activeCriteriaIds : DEFAULT_CRITERIA_IDS;
+        return MASTER_TAXONOMY_DIMENSIONS.filter(dim => targetingIds.includes(dim.id));
+    }, [activeCriteriaIds]);
+
+
 
     useEffect(() => {
         async function fetchArticleDetails() {
@@ -139,15 +161,53 @@ export default function ArticleDetails() {
                 setLoading(true);
                 if (!articleId) throw new Error("Article ID is missing from the URL params.");
 
+                // 1. Fetch criteria dimensions from Database with LocalStorage and Preset Fallbacks
+                let criteriaIds: string[] = [];
+
+                if (surveyId) {
+                    try {
+                        // Extract numeric ID sequence in case url matches format "survey-123"
+                        const parsedId = surveyId.includes('-') ? surveyId.split('-').pop() : surveyId;
+
+                        const criteriaResponse = await fetch(`http://localhost:8080/api/surveys/${parsedId}/criteria`);
+                        if (criteriaResponse.ok) {
+                            const dbData = await criteriaResponse.json();
+                            // Assumes DB payload layout returns an array directly, or an object containing a criteria field
+                            const extractedIds = Array.isArray(dbData) ? dbData : dbData.criteria;
+
+                            if (Array.isArray(extractedIds) && extractedIds.length > 0) {
+                                criteriaIds = extractedIds;
+                            }
+                        }
+                    } catch (dbFetchError) {
+                        console.warn("Could not retrieve parameters from DB ecosystem. Checking localized caches...", dbFetchError);
+                    }
+
+                    // Cache fallback loop if database is unreachable or hasn't saved properties yet
+                    if (criteriaIds.length === 0) {
+                        const savedCriteria = localStorage.getItem(`survey:${surveyId}:criteria`);
+                        if (savedCriteria) {
+                            const parsed = JSON.parse(savedCriteria);
+                            criteriaIds = Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_CRITERIA_IDS;
+                        } else {
+                            criteriaIds = DEFAULT_CRITERIA_IDS;
+                        }
+                    }
+                } else {
+                    criteriaIds = DEFAULT_CRITERIA_IDS;
+                }
+                setActiveCriteriaIds(criteriaIds);
+
+                // 2. Fetch foundational Article Metadata
                 const data = (await getArticle(articleId)) as unknown as ArticleDto;
                 setArticle(data);
                 if (data.llm_classifications) {
                     setAiSuggestions(data.llm_classifications);
                 }
 
-                // Initialize user annotations form layout
+                // 3. Populate empty validation state maps matching all schema elements
                 const initialForm: Record<string, UserAnnotation> = {};
-                TAXONOMY_DIMENSIONS.forEach(dim => {
+                MASTER_TAXONOMY_DIMENSIONS.forEach(dim => {
                     initialForm[dim.name] = {
                         dimension: dim.name,
                         values: [],
@@ -155,6 +215,32 @@ export default function ArticleDetails() {
                         proof: ''
                     };
                 });
+
+                // 4. Hydrate prior review records if they exist
+                try {
+                    const reviewResponse = await fetch(`http://localhost:8080/api/articles/${articleId}/review-data`);
+                    if (reviewResponse.ok && reviewResponse.status !== 204) {
+                        const savedReview = await reviewResponse.json();
+
+                        if (savedReview && savedReview.jsonResponse) {
+                            const parsedForm = JSON.parse(savedReview.jsonResponse) as Record<string, UserAnnotation>;
+
+                            Object.keys(parsedForm).forEach(key => {
+                                if (initialForm[key]) {
+                                    initialForm[key] = {
+                                        ...initialForm[key],
+                                        values: parsedForm[key].values || [],
+                                        confidence: parsedForm[key].confidence || 'N/A',
+                                        proof: parsedForm[key].proof || ''
+                                    };
+                                }
+                            });
+                        }
+                    }
+                } catch (backendFetchErr) {
+                    console.warn("No prior annotation records discovered for this session framework.", backendFetchErr);
+                }
+
                 setAnnotations(initialForm);
 
             } catch (err: any) {
@@ -167,7 +253,7 @@ export default function ArticleDetails() {
         if (articleId) {
             fetchArticleDetails();
         }
-    }, [articleId]);
+    }, [articleId, surveyId]);
 
     const generateTaxonomyWithGemma = async () => {
         if (!article || !articleId) return;
@@ -175,8 +261,7 @@ export default function ArticleDetails() {
             setGenerating(true);
             toast.loading("Gemini is reading the paper details...", { id: "gemini-task" });
 
-            // Dynamically construct the full validation schema definition for the prompt blueprint
-            const dynamicSchemaBlueprint = TAXONOMY_DIMENSIONS.reduce((acc, dim) => {
+            const dynamicSchemaBlueprint = filteredTaxonomyDimensions.reduce((acc, dim) => {
                 acc[dim.name] = {
                     values: dim.options,
                     confidence: "high | medium | low",
@@ -188,11 +273,11 @@ export default function ArticleDetails() {
             const targetPrompt = `
 You are a research paper analysis assistant. Analyze the following paper details:
 Title: "${article.title}"
-Abstract: "${article.articleAbstract ?? article.abstractText ?? ''}"
+Abstract: "${article.abstract ?? ''}"
 
 For each of the dimensions provided below, select relevant option values that map to the text. Provide a confidence level ('high', 'medium', 'low') and extract a short verbatim quote as evidence proof. You MUST respond with a valid JSON object ONLY.
 
-The output format must strictly follow this structural schema layout matching all 15 dimensions:
+The output format must strictly follow this structural schema layout matching the configuration constraints:
 ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
 `.trim();
 
@@ -206,7 +291,7 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
 
             const payload = await response.json();
             setAiSuggestions(payload);
-            toast.success("Taxonomy suggestions populated for all dimensions!", { id: "gemini-task" });
+            toast.success("Taxonomy suggestions populated for selected dimensions!", { id: "gemini-task" });
         } catch (err: any) {
             console.error(err);
             toast.error(`Extraction Failed: ${err.message || err}`, { id: "gemini-task" });
@@ -215,7 +300,6 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
         }
     };
 
-    // Form Modification Handlers
     const toggleChipValue = (dimension: string, value: string) => {
         setAnnotations(prev => {
             const currentVals = prev[dimension]?.values || [];
@@ -243,7 +327,6 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
         }));
     };
 
-    // Direct AI pipeline ingestion mapping tool handler
     const handleCopyAiToForm = (dimensionName: string) => {
         const aiSuggestion = aiSuggestions[dimensionName];
         if (!aiSuggestion) {
@@ -276,10 +359,13 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                 body: JSON.stringify({ reviewForm: annotations })
             });
 
-            if (!response.ok) throw new Error("Failed to upload annotation updates.");
+            if (!response.ok) {
+                const errorText = await response.text().catch(() => "Unknown server error");
+                throw new Error(`Server returned status ${response.status}: ${errorText}`);
+            }
             toast.success("Review assessments saved successfully!");
         } catch (err: any) {
-            toast.error(`Failed to sync updates: ${err.message}`);
+            toast.error(`Error saving review: ${err.message}`);
         } finally {
             setSaving(false);
         }
@@ -309,7 +395,7 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
     }
 
     const displayYear = article.publicationYear ?? article.year ?? "N/A";
-    const displayAbstract = article.articleAbstract ?? article.abstractText ?? "No abstract available for this paper.";
+    const displayAbstract = article.abstract ?? "No abstract available for this paper.";
 
     return (
         <div className="max-w-7xl mx-auto my-6 px-4 md:px-8 space-y-6">
@@ -321,7 +407,17 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                     onClick={() => navigate(`/survey/${surveyId}`)}
                     className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition gap-1.5 group"
                 >
-                    <span className="transform group-hover:-translate-x-0.5 transition-transform">←</span> Back to Survey Workspace
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        strokeWidth={2}
+                        stroke="currentColor"
+                        className="w-4 h-4 transform transition-transform group-hover:-translate-x-0.5"
+                    >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"/>
+                    </svg>
+                    Back to Survey Workspace
                 </button>
 
                 <button
@@ -350,6 +446,18 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                             <span className="flex items-center gap-1"><BookOpen className="w-3.5 h-3.5" /> {article.journal}</span>
                             <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {displayYear}</span>
                         </p>
+
+                        {article.doi && (
+                            <a
+                                href={`https://doi.org/${article.doi}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-4 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                                View Article
+                            </a>
+                        )}
                     </div>
 
                     <div>
@@ -384,7 +492,7 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                     {/* Review Assistant Pipeline Trigger Header */}
                     <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+                            <Sparkles className="w-4 h-4 text-indigo-400" />
                             <div>
                                 <h3 className="font-bold text-sm">Review Assistant Pipeline</h3>
                                 <p className="text-[11px] text-slate-400">Leverage AI generation values to assist your taxonomy answer</p>
@@ -399,8 +507,8 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                         </button>
                     </div>
 
-                    {/* Interactive Screening Form Loops */}
-                    {TAXONOMY_DIMENSIONS.map((dim) => {
+                    {/* Screening Form Loops */}
+                    {filteredTaxonomyDimensions.map((dim) => {
                         const currentAnn = annotations[dim.name] || { values: [], confidence: 'N/A', proof: '' };
                         const aiData = aiSuggestions[dim.name];
 

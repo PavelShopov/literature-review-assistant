@@ -385,6 +385,7 @@ export async function importSurveyArticle(
       type: "pdf" as const,
       data: await fileToDataUrl(input.data),
       fileName: input.data.name,
+      mimeType: input.data.type,
       addedBy: input.addedBy,
     };
 
@@ -400,6 +401,46 @@ export async function importSurveyArticle(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
+}
+
+export async function openArticleResource(article: Article, preferPdf = false): Promise<void> {
+  const targetUrl = preferPdf && article.pdfUrl ? article.pdfUrl : article.openUrl;
+  const targetType = preferPdf && article.pdfUrl ? "pdf" : article.openType;
+  if (!targetUrl) {
+    throw new Error("No PDF, publisher URL, or DOI is available for this article");
+  }
+
+  if (targetType !== "pdf") {
+    const parsed = new URL(targetUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error("The article URL is invalid");
+    }
+    window.open(parsed.toString(), "_blank", "noopener,noreferrer");
+    return;
+  }
+
+  const tab = window.open("", "_blank");
+  if (tab) tab.opener = null;
+
+  try {
+    const headers = new Headers();
+    const token = readAuthToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const response = await fetch(targetUrl.startsWith("http") ? targetUrl : `${API_BASE_URL}${targetUrl}`, { headers });
+    if (!response.ok) {
+      throw new Error(response.status === 404 ? "PDF not found" : "PDF could not be opened");
+    }
+    const blobUrl = URL.createObjectURL(await response.blob());
+    if (tab) {
+      tab.location.href = blobUrl;
+    } else {
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+    }
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } catch (error) {
+    tab?.close();
+    throw error;
+  }
 }
 
 export function deleteSurveyArticle(surveyId: string, articleId: string): Promise<void> {
@@ -445,4 +486,39 @@ export function removeContributor(surveyId: string, contributorId: string): Prom
 
 export function getSurveysToReview(): Promise<Survey[]> {
   return request<Survey[]>("/api/reviews/surveys");
+}
+
+export type AIAnnotation = {
+  promptText: string;
+  jsonResponse: string;
+};
+
+export type ReviewableArticle = {
+  externalId: string;
+  title: string;
+  journal: string;
+  publicationYear: number;
+  doi: string;
+  url: string;
+  status: string;
+  articleAbstract: string;
+  inclusionSummary: string;
+  authors: string[];
+  reviewed: boolean;
+  jsonResponse: string | null;
+  aiAnnotations: AIAnnotation[];
+  reviewedBy?: string | null;
+  reviewText?: string | null;
+};
+
+export function getArticlesToReview(surveyId: string): Promise<ReviewableArticle[]> {
+  return request<ReviewableArticle[]>(`/api/reviews/surveys/${surveyId}/articles`);
+}
+
+export function submitArticleReview(surveyId: string, articleId: string, jsonResponse: string): Promise<void> {
+  return request<void>(`/api/reviews/surveys/${surveyId}/articles/${articleId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonResponse }),
+  });
 }

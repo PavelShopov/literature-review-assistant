@@ -6,6 +6,7 @@ public record SurveyDto(
         String description,
         String createdDate,
         String status,
-        int totalArticles
+        int totalArticles,
+        int reviewedArticlesCount
 ) {
 }

@@ -122,6 +122,9 @@ export function ArticleModal({
                 )
               )}
             </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Click a status to save it immediately.
+            </p>
           </div>
         </div>
 

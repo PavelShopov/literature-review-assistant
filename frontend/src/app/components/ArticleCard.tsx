@@ -1,4 +1,6 @@
-import { Eye, Edit, Trash2, ExternalLink, UserRound } from "lucide-react";
+import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+import { Eye, Edit, Trash2, ExternalLink, UserRound, X } from "lucide-react";
 import { motion } from "motion/react";
 
 export type ArticleStatus = "INCLUDED" | "EXCLUDED" | "PENDING";
@@ -13,18 +15,27 @@ export interface Article {
   status: ArticleStatus;
   abstract?: string;
   inclusionSummary?: string;
+  url?: string | null;
+  openUrl?: string | null;
+  openType?: "pdf" | "external" | "doi" | null;
+  hasPdf?: boolean;
+  pdfUrl?: string | null;
   addedBy?: {
     id: string;
     name: string;
     role: "Owner" | "Reviewer";
   };
+  reviewedBy?: string | null;
+  reviewText?: string | null;
 }
 
 interface ArticleCardProps {
   article: Article;
   onView: (id: string) => void;
+  onOpen: (article: Article) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
+  onUpdateStatus: (id: string, status: ArticleStatus) => void;
   canEdit?: boolean;
   canDelete?: boolean;
 }
@@ -50,12 +61,34 @@ const statusConfig = {
 export function ArticleCard({
   article,
   onView,
+  onOpen,
   onEdit,
   onDelete,
+  onUpdateStatus,
   canEdit = true,
   canDelete = true,
 }: ArticleCardProps) {
   const status = statusConfig[article.status];
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
+
+  useEffect(() => {
+    setPortalReady(true);
+    return () => setPortalReady(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isReviewOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsReviewOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isReviewOpen]);
 
   return (
     <motion.div
@@ -68,17 +101,42 @@ export function ArticleCard({
       <div className="p-6">
         {/* Status Badge */}
         <div className="flex items-center justify-between mb-4">
-          <span
-            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${status.bg} ${status.text} ${status.border} border`}
-          >
-            {article.status}
-          </span>
+          <div className="flex flex-col gap-2">
+            <span
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${status.bg} ${status.text} ${status.border} border`}
+            >
+              {article.status}
+            </span>
+            <div className="flex gap-1">
+              {(["INCLUDED", "EXCLUDED", "PENDING"] as ArticleStatus[]).map((nextStatus) => {
+                const active = article.status === nextStatus;
+                return (
+                  <button
+                    key={nextStatus}
+                    type="button"
+                    onClick={() => onUpdateStatus(article.id, nextStatus)}
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors ${
+                      active
+                        ? nextStatus === "INCLUDED"
+                          ? "border-green-300 bg-green-600 text-white"
+                          : nextStatus === "EXCLUDED"
+                            ? "border-red-300 bg-red-600 text-white"
+                            : "border-yellow-300 bg-yellow-600 text-white"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {nextStatus}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <span className="text-xs text-gray-500">{article.year}</span>
         </div>
 
         {/* Title */}
         <h3
-          onClick={() => onView(article.id)}
+          onClick={() => article.openUrl ? onOpen(article) : onView(article.id)}
           className="text-base font-semibold text-gray-900 mb-3 line-clamp-2 cursor-pointer hover:text-blue-600 transition-colors"
         >
           {article.title}
@@ -123,14 +181,66 @@ export function ArticleCard({
           </div>
         )}
 
+        {article.reviewedBy && article.status !== "PENDING" && (
+          <button
+            type="button"
+            onClick={() => setIsReviewOpen(true)}
+            className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-left text-xs text-blue-800 hover:bg-blue-100 transition-colors"
+          >
+            Reviewed by {article.reviewedBy}
+            <span className="ml-1 underline">view note</span>
+          </button>
+        )}
+
+        {portalReady && isReviewOpen && createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4" onClick={() => setIsReviewOpen(false)}>
+            <div
+              className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4">
+                <div>
+                  <h4 className="text-lg font-semibold text-gray-900">Review note</h4>
+                  <p className="text-sm text-gray-500">
+                    Reviewed by {article.reviewedBy ?? "Unknown reviewer"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsReviewOpen(false)}
+                  className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  aria-label="Close review note"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-5">
+                <div className="whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-800">
+                  {article.reviewText || article.status}
+                </div>
+              </div>
+              <div className="flex justify-end border-t border-gray-200 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setIsReviewOpen(false)}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
         {/* Actions */}
         <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
           <button
-            onClick={() => onView(article.id)}
+            onClick={() => article.openUrl ? onOpen(article) : onView(article.id)}
             className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
           >
-            <Eye className="w-4 h-4" />
-            View
+            {article.openUrl ? <ExternalLink className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            {article.openUrl ? "Open article" : "View details"}
           </button>
           {canEdit && (
             <button

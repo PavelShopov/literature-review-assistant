@@ -2,10 +2,13 @@ package mk.ukim.finki.literaturereviewassistant.web.controller;
 
 import mk.ukim.finki.literaturereviewassistant.model.*;
 import mk.ukim.finki.literaturereviewassistant.repository.AppUserRepository;
+import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
 import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
 import mk.ukim.finki.literaturereviewassistant.web.dto.*;
 import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -15,9 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/surveys")
@@ -25,10 +26,12 @@ public class SurveyController {
 
     private final SurveyService surveyService;
     private final AppUserRepository userRepository;
+    private final SurveyRepository surveyRepository;
 
-    public SurveyController(SurveyService surveyService, AppUserRepository userRepository) {
+    public SurveyController(SurveyService surveyService, AppUserRepository userRepository, SurveyRepository surveyRepository) {
         this.surveyService = surveyService;
         this.userRepository = userRepository;
+        this.surveyRepository = surveyRepository;
     }
 
     @GetMapping
@@ -119,6 +122,22 @@ public class SurveyController {
     @GetMapping("/articles/{articleId}")
     public ArticleDto getArticleById(@PathVariable String articleId) {
         return surveyService.findArticle(articleId);
+    }
+
+    @GetMapping("/articles/{articleId}/pdf")
+    public ResponseEntity<byte[]> getArticlePdf(
+            @PathVariable String articleId,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        PdfDownload pdf = surveyService.findArticlePdf(articleId, authorization);
+        ContentDisposition disposition = ContentDisposition.inline()
+                .filename(pdf.fileName(), java.nio.charset.StandardCharsets.UTF_8)
+                .build();
+
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(pdf.mimeType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .body(pdf.content());
     }
 
     @GetMapping("/{surveyId}/contributors")
@@ -232,5 +251,21 @@ public class SurveyController {
         );
 
         return ResponseEntity.status(HttpStatus.CREATED).body(newSurveyDto);
+    }
+    @PutMapping("/{id}/criteria")
+    public ResponseEntity<?> updateSurveyCriteria(
+            @PathVariable String id,
+            @RequestBody Map<String, Set<String>> payload) {
+
+        return surveyRepository.findByExternalId(id).map(survey -> {
+            Set<String> criteria = payload.get("criteria");
+            if (criteria == null) {
+                return ResponseEntity.badRequest().body("Criteria key missing in request body.");
+            }
+
+            survey.setSelectedCriteria(criteria);
+            surveyRepository.save(survey);
+            return ResponseEntity.ok().body(Map.of("message", "Criteria configurations synchronized successfully!"));
+        }).orElse(ResponseEntity.notFound().build());
     }
 }
