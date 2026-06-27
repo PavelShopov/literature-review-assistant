@@ -11,16 +11,19 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   app:
-    build: .
+    build: .  
     ports:
       - "1234:8080"
     volumes:
       - uploads_data:/app/uploads  # Docker manages this storage internally
+      - storage_data:/app/storage
     depends_on:
       - db
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/literature_db
-
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/literature_db
+      PAPER_IMPORT_STORAGE_DIR: /app/storage/pdfs
+      SPRING_DOCKER_COMPOSE_ENABLED: "false"
 volumes:
   postgres_data:
   uploads_data:
+  storage_data:

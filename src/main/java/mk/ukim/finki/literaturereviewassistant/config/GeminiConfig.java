@@ -11,7 +11,7 @@ public class GeminiConfig {
     @Value("${gemini.api.key}")
     private String apiKey;
 
-    @Bean
+//    @Bean
     public RestTemplate restTemplate() {
         return new RestTemplate();
     }

@@ -18,6 +18,8 @@ public interface ArticleRepository extends JpaSpecificationRepository<Article, L
 
     Optional<Article> findByUrl(String url);
 
+    Optional<Article> findFirstByTitleIgnoreCaseAndPublicationYear(String title, Integer publicationYear);
+
     List<Article> findBySurveyLinks_Survey(Survey survey);
 
     Optional<Article> findByExternalId(String externalId);

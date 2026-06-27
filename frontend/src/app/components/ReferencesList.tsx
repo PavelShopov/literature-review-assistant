@@ -38,7 +38,7 @@ export function ReferencesList({
   const [summaries, setSummaries] = useState<Record<string, string>>({});
 
   const handleViewArticle = (referenceId: string) => {
-    navigate(`/survey/${surveyId}/articles/${referenceId}/view`);
+    navigate(`/survey/${surveyId}/articles/${referenceId}`);
   };
 
   const handleAddToSurvey = (referenceId: string) => {

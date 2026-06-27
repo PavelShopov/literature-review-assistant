@@ -6,6 +6,7 @@ import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.AddedByDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleImportRequest;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ArticleUpdateRequest;
+import mk.ukim.finki.literaturereviewassistant.web.dto.PdfDownload;
 import mk.ukim.finki.literaturereviewassistant.web.dto.ReviewerDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDetailsDto;
 import mk.ukim.finki.literaturereviewassistant.web.dto.SurveyDto;
@@ -30,6 +31,8 @@ public interface SurveyService {
 
 
     ArticleDto findArticle(String articleId);
+
+    PdfDownload findArticlePdf(String articleId, String authorizationHeader);
 
     ArticleDto importArticle(String surveyId, ArticleImportRequest request, String authorizationHeader);
 

@@ -32,6 +32,12 @@ export function ImportSection({ onImport, isOpen, onClose }: ImportSectionProps)
     }
   };
 
+  const handleBibFile = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".bib")) return;
+    const text = await file.text();
+    setBibtexInput(text);
+  };
+
   const handleFileUpload = (file: File) => {
     onImport("pdf", file);
   };
@@ -147,6 +153,25 @@ export function ImportSection({ onImport, isOpen, onClose }: ImportSectionProps)
             >
               Import BibTeX
             </button>
+            <div>
+              <input
+                id="bib-upload"
+                type="file"
+                accept=".bib,application/x-bibtex,text/plain"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void handleBibFile(file);
+                }}
+              />
+              <label
+                htmlFor="bib-upload"
+                className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+              >
+                <Upload className="h-4 w-4" />
+                Load a .bib file
+              </label>
+            </div>
           </div>
         )}
 
