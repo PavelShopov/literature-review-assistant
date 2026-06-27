@@ -9,7 +9,10 @@ import {
   Sparkles,
   ArrowRight,
   Filter,
-  UsersRound
+  UsersRound,
+  Sliders,
+  CheckSquare,
+  Square
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { AskInput } from "../components/AskInput";
@@ -46,6 +49,25 @@ type ReferenceDecision = {
   decidedAt: string;
   reviewerName?: string;
 };
+
+// All custom dimensions requested for the literature extraction protocol
+const EXTRACTION_CRITERIA_OPTIONS = [
+  { id: "methodology", label: "Research Methodology", group: "Technical" },
+  { id: "dataset_context", label: "Target Dataset Context", group: "Data" },
+  { id: "framework_approach", label: "Model / Framework Approach", group: "Technical" },
+  { id: "evaluation_metrics", label: "Evaluation Metrics Utilized", group: "Technical" },
+  { id: "data_sourcing", label: "Data Sourcing Type", group: "Data" },
+  { id: "research_focus", label: "Research Focus Area", group: "Domain" },
+  { id: "application_domain", label: "Primary Application Domain", group: "Domain" },
+  { id: "computing_env", label: "Computing Environment", group: "Infrastructure" },
+  { id: "open_science", label: "Code Availability & Open Science", group: "Infrastructure" },
+  { id: "learning_paradigm", label: "Learning Paradigm", group: "Technical" },
+  { id: "model_size", label: "Scale of Parameters / Model Size", group: "Technical" },
+  { id: "hardware_reqs", label: "Hardware Requirements", group: "Infrastructure" },
+  { id: "limitations", label: "Limitations Acknowledged", group: "Domain" },
+  { id: "funding_source", label: "Funding Source Type", group: "Metadata" },
+  { id: "target_audience", label: "Target Audience / Stakeholder", group: "Metadata" },
+];
 
 const normalizeReviewers = (items: Contributor[]): Contributor[] =>
     items.map((item) => ({
@@ -147,6 +169,9 @@ export default function SurveyDetailsPage() {
   const [survey, setSurvey] = useState<SurveyDetails | null>(null);
   const [surveyError, setSurveyError] = useState<string | null>(null);
 
+  // Custom metadata criteria setup states
+  const [selectedCriteria, setSelectedCriteria] = useState<string[]>([]);
+
   const defaultOwner = {
     id: "owner",
     name: "Survey Owner",
@@ -164,7 +189,6 @@ export default function SurveyDetailsPage() {
 
   const currentUser = authUser ?? (isReviewerFallback(roleParam) ? defaultReviewer : defaultOwner);
 
-  // Robust owner matching context using backend DTO properties safely
   const currentRole: "Owner" | "Reviewer" = authUser
       ? contributors.some(
           (c) => c.email?.toLowerCase() === authUser.email?.toLowerCase() && c.role === "Owner",
@@ -199,6 +223,15 @@ export default function SurveyDetailsPage() {
 
       setSurvey(surveyData);
       setArticles(surveyArticles);
+
+      // Load designated criteria targets from storage
+      const savedCriteria = localStorage.getItem(`survey:${surveyId}:criteria`);
+      if (savedCriteria) {
+        setSelectedCriteria(JSON.parse(savedCriteria));
+      } else {
+        // Fallback or defaults
+        setSelectedCriteria(["methodology", "framework_approach", "evaluation_metrics"]);
+      }
 
       const nextContributors =
           surveyContributors.length > 0 ? normalizeReviewers(surveyContributors) : [defaultOwner];
@@ -240,6 +273,39 @@ export default function SurveyDetailsPage() {
   const persistReferenceDecisions = (nextDecisions: Record<string, ReferenceDecision>) => {
     setReferenceDecisions(nextDecisions);
     localStorage.setItem(`survey:${surveyId}:reference-decisions`, JSON.stringify(nextDecisions));
+  };
+
+  const handleToggleCriteria = (id: string) => {
+    if (!isOwnerView) {
+      toast.error("Only the survey administrator can edit analysis parameters");
+      return;
+    }
+
+    let updatedCriteria: string[];
+    if (selectedCriteria.includes(id)) {
+      updatedCriteria = selectedCriteria.filter((item) => item !== id);
+    } else {
+      updatedCriteria = [...selectedCriteria, id];
+    }
+
+    setSelectedCriteria(updatedCriteria);
+    localStorage.setItem(`survey:${surveyId}:criteria`, JSON.stringify(updatedCriteria));
+    toast.success("Extraction parameters updated");
+  };
+
+  const handleSelectAllCriteria = () => {
+    if (!isOwnerView) return;
+    const allIds = EXTRACTION_CRITERIA_OPTIONS.map(opt => opt.id);
+    setSelectedCriteria(allIds);
+    localStorage.setItem(`survey:${surveyId}:criteria`, JSON.stringify(allIds));
+    toast.success("All evaluation dimensions enabled");
+  };
+
+  const handleClearAllCriteria = () => {
+    if (!isOwnerView) return;
+    setSelectedCriteria([]);
+    localStorage.setItem(`survey:${surveyId}:criteria`, JSON.stringify([]));
+    toast.success("All custom extraction dimensions cleared");
   };
 
   if (surveyError) {
@@ -361,7 +427,6 @@ export default function SurveyDetailsPage() {
 
     const nextStatus: ArticleStatus = decision === "added" ? "INCLUDED" : "EXCLUDED";
 
-    // Fixed: Key mapped directly to abstractText to align with backend DTO models
     updateSurveyArticle(surveyId, referenceId, {
       title: article.title,
       authors: article.authors,
@@ -427,7 +492,6 @@ export default function SurveyDetailsPage() {
   };
 
   const handleOpen = (article: Article) => {
-    // Navigates internally to /survey/:surveyId/articles/:articleId
     navigate(`/survey/${surveyId}/articles/${article.id}`);
   };
 
@@ -469,16 +533,15 @@ export default function SurveyDetailsPage() {
       abstract: article.abstract ?? "",
       inclusionSummary: article.inclusionSummary ?? "",
     })
-      .then((updatedArticle) => {
-        setArticles((currentArticles) =>
-          currentArticles.map((current) => (current.id === id ? updatedArticle : current)),
-        );
-        toast.success(`Status updated to ${status}`);
-      })
-      .catch((err) => toast.error(err instanceof Error ? err.message : "Status update failed"));
+        .then((updatedArticle) => {
+          setArticles((currentArticles) =>
+              currentArticles.map((current) => (current.id === id ? updatedArticle : current)),
+          );
+          toast.success(`Status updated to ${status}`);
+        })
+        .catch((err) => toast.error(err instanceof Error ? err.message : "Status update failed"));
   };
 
-  // Filter articles based on current filter
   const filteredArticles = articles.filter((article) => {
     if (articleFilter === "all") return true;
     if (articleFilter === "screened") return article.status === "INCLUDED" || article.status === "EXCLUDED";
@@ -573,7 +636,7 @@ export default function SurveyDetailsPage() {
           </div>
         </div>
 
-        {/* Content */}
+        {/* Content Body */}
         <div className="max-w-7xl mx-auto px-6 py-8">
           {activeTab === "dashboard" && (
               <div className="space-y-6">
@@ -592,6 +655,77 @@ export default function SurveyDetailsPage() {
                       {survey.researchQuestion}
                     </p>
                   </div>
+                </div>
+
+                {/* Structured Extraction Dimensions Configuration Section */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4 mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
+                        <Sliders className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-semibold text-gray-900">Structured Review Criteria</h2>
+                        <p className="text-xs text-gray-500">Toggle target dimensions that reviewers must evaluate for incoming articles</p>
+                      </div>
+                    </div>
+                    {isOwnerView && (
+                        <div className="flex items-center gap-2">
+                          <button
+                              type="button"
+                              onClick={handleSelectAllCriteria}
+                              className="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          >
+                            Select All
+                          </button>
+                          <span className="text-gray-300 text-xs">|</span>
+                          <button
+                              type="button"
+                              onClick={handleClearAllCriteria}
+                              className="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {EXTRACTION_CRITERIA_OPTIONS.map((option) => {
+                      const isChecked = selectedCriteria.includes(option.id);
+                      return (
+                          <button
+                              key={option.id}
+                              type="button"
+                              disabled={!isOwnerView}
+                              onClick={() => handleToggleCriteria(option.id)}
+                              className={`flex items-start text-left gap-3 p-3 rounded-xl border transition-all ${
+                                  isChecked
+                                      ? "bg-blue-50/40 border-blue-200 shadow-sm"
+                                      : "bg-white border-gray-200 hover:border-gray-300"
+                              } ${!isOwnerView ? "cursor-not-allowed opacity-80" : "cursor-pointer"}`}
+                          >
+                            <div className={`mt-0.5 shrink-0 ${isChecked ? "text-blue-600" : "text-gray-400"}`}>
+                              {isChecked ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                            </div>
+                            <div>
+                              <p className={`text-sm font-medium ${isChecked ? "text-blue-900" : "text-gray-700"}`}>
+                                {option.label}
+                              </p>
+                              <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-semibold bg-gray-100 text-gray-500">
+                              {option.group}
+                            </span>
+                            </div>
+                          </button>
+                      );
+                    })}
+                  </div>
+
+                  {!isOwnerView && (
+                      <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-100 text-xs text-amber-700">
+                        * You are in reviewer viewing mode. Review parameters can only be altered by the survey administrator.
+                      </div>
+                  )}
                 </div>
 
                 {/* Clickable Statistics Cards */}
@@ -658,164 +792,164 @@ export default function SurveyDetailsPage() {
                   </div>
                 </div>
 
-            <ContributorsPanel
-              contributors={contributors}
-              onAddContributor={handleAddContributor}
-              onRemoveContributor={handleRemoveContributor}
-              canManageReviewers={isOwnerView}
-            />
-
-            {/* Quick Actions */}
-            <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                Quick Actions
-              </h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                <button
-                  onClick={() => setActiveTab("articles")}
-                  className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
-                >
-                  <FileText className="w-5 h-5 text-blue-600 mb-2" />
-                  <p className="text-sm font-medium text-gray-900">Manage Articles</p>
-                  <p className="text-xs text-gray-500">Import and review papers</p>
-                </button>
-                <button
-                  onClick={() => setActiveTab("ask-ai")}
-                  className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
-                >
-                  <Sparkles className="w-5 h-5 text-purple-600 mb-2" />
-                  <p className="text-sm font-medium text-gray-900">Ask AI</p>
-                  <p className="text-xs text-gray-500">Get insights from your research</p>
-                </button>
-                <button
-                  onClick={() => setActiveTab("reviewers")}
-                  className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
-                >
-                  <UsersRound className="w-5 h-5 text-green-600 mb-2" />
-                  <p className="text-sm font-medium text-gray-900">Add Reviewers</p>
-                  <p className="text-xs text-gray-500">Assign reviewers to this survey</p>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Reviewers Tab */}
-        {activeTab === "reviewers" && (
-          <ContributorsPanel
-            contributors={contributors}
-            onAddContributor={handleAddContributor}
-            onRemoveContributor={handleRemoveContributor}
-            canManageReviewers={isOwnerView}
-          />
-        )}
-
-        {/* Articles Tab */}
-        {activeTab === "articles" && (
-          <div className="space-y-6">
-            {articleFilter !== "all" && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-blue-600" />
-                  <p className="text-sm font-medium text-blue-900">
-                    Showing: {articleFilter === "screened" ? "Screened Articles (Included & Excluded)" : "Pending Review"}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setArticleFilter("all")}
-                  className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                >
-                  Clear filter
-                </button>
-              </div>
-            )}
-
-            {isImportOpen && (
-              <ImportSection
-                onImport={handleImport}
-                isOpen={isImportOpen}
-                onClose={() => setIsImportOpen(false)}
-              />
-            )}
-
-            {!isImportOpen && (
-              <button
-                onClick={() => setIsImportOpen(true)}
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl p-4 flex items-center justify-center gap-2 font-medium transition-all shadow-sm"
-              >
-                <FileText className="w-5 h-5" />
-                Import New Articles
-              </button>
-            )}
-
-            {filteredArticles.length === 0 ? (
-              <EmptyState onAddArticle={() => setIsImportOpen(true)} />
-            ) : (
-              <div>
-                <div className="flex items-center justify-between mb-6">
-                  <p className="text-sm text-gray-600">
-                    {filteredArticles.length} article{filteredArticles.length !== 1 ? "s" : ""}
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredArticles.map((article) => (
-                    <ArticleCard
-                      key={article.id}
-                      article={article}
-                      onView={handleView}
-                      onOpen={handleOpen}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                      onUpdateStatus={handleUpdateStatus}
-                      canEdit={isOwnerView || article.addedBy?.id === currentUser.id}
-                      canDelete={isOwnerView || article.addedBy?.id === currentUser.id}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "ask-ai" && (
-          <div className="space-y-6">
-            <AskInput onAsk={handleAsk} isLoading={isLoading} />
-
-            {isLoading && <LoadingState />}
-
-            {showResults && currentQuestion && currentAnswer && (
-              <>
-                <AIAnswer
-                  question={currentQuestion}
-                  answer={currentAnswer}
-                  sourceCount={topReferences.length}
-                  confidence={85}
+                <ContributorsPanel
+                    contributors={contributors}
+                    onAddContributor={handleAddContributor}
+                    onRemoveContributor={handleRemoveContributor}
+                    canManageReviewers={isOwnerView}
                 />
-                {topReferences.length > 0 ? (
-                  <ReferencesList
-                    references={topReferences}
-                    surveyId={surveyId}
-                    decisions={referenceDecisions}
-                    onReviewReference={handleReferenceDecision}
-                    onAddToNewSurvey={handleAddToNewSurvey}
-                  />
-                ) : (
-                  <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                    <h3 className="text-sm font-semibold text-gray-900 mb-2">Top References</h3>
-                    <p className="text-sm text-gray-600">
-                      No survey database references are available yet. Import articles into this survey to
-                      populate this list. The answer above is based on model knowledge only.
-                    </p>
-                  </div>
-                )}
-              </>
-            )}
 
-            {!isLoading && !showResults && <EmptyAskState articleCount={totalArticles} />}
-          </div>
-        )}
+                {/* Quick Actions */}
+                <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl border border-gray-200 p-6">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                    Quick Actions
+                  </h2>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <button
+                        onClick={() => setActiveTab("articles")}
+                        className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
+                    >
+                      <FileText className="w-5 h-5 text-blue-600 mb-2" />
+                      <p className="text-sm font-medium text-gray-900">Manage Articles</p>
+                      <p className="text-xs text-gray-500">Import and review papers</p>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("ask-ai")}
+                        className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
+                    >
+                      <Sparkles className="w-5 h-5 text-purple-600 mb-2" />
+                      <p className="text-sm font-medium text-gray-900">Ask AI</p>
+                      <p className="text-xs text-gray-500">Get insights from your research</p>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("reviewers")}
+                        className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
+                    >
+                      <UsersRound className="w-5 h-5 text-green-600 mb-2" />
+                      <p className="text-sm font-medium text-gray-900">Add Reviewers</p>
+                      <p className="text-xs text-gray-500">Assign reviewers to this survey</p>
+                    </button>
+                  </div>
+                </div>
+              </div>
+          )}
+
+          {/* Reviewers Tab */}
+          {activeTab === "reviewers" && (
+              <ContributorsPanel
+                  contributors={contributors}
+                  onAddContributor={handleAddContributor}
+                  onRemoveContributor={handleRemoveContributor}
+                  canManageReviewers={isOwnerView}
+              />
+          )}
+
+          {/* Articles Tab */}
+          {activeTab === "articles" && (
+              <div className="space-y-6">
+                {articleFilter !== "all" && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Filter className="w-4 h-4 text-blue-600" />
+                        <p className="text-sm font-medium text-blue-900">
+                          Showing: {articleFilter === "screened" ? "Screened Articles (Included & Excluded)" : "Pending Review"}
+                        </p>
+                      </div>
+                      <button
+                          onClick={() => setArticleFilter("all")}
+                          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        Clear filter
+                      </button>
+                    </div>
+                )}
+
+                {isImportOpen && (
+                    <ImportSection
+                        onImport={handleImport}
+                        isOpen={isImportOpen}
+                        onClose={() => setIsImportOpen(false)}
+                    />
+                )}
+
+                {!isImportOpen && (
+                    <button
+                        onClick={() => setIsImportOpen(true)}
+                        className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl p-4 flex items-center justify-center gap-2 font-medium transition-all shadow-sm"
+                    >
+                      <FileText className="w-5 h-5" />
+                      Import New Articles
+                    </button>
+                )}
+
+                {filteredArticles.length === 0 ? (
+                    <EmptyState onAddArticle={() => setIsImportOpen(true)} />
+                ) : (
+                    <div>
+                      <div className="flex items-center justify-between mb-6">
+                        <p className="text-sm text-gray-600">
+                          {filteredArticles.length} article{filteredArticles.length !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredArticles.map((article) => (
+                            <ArticleCard
+                                key={article.id}
+                                article={article}
+                                onView={handleView}
+                                onOpen={handleOpen}
+                                onEdit={handleEdit}
+                                onDelete={handleDelete}
+                                onUpdateStatus={handleUpdateStatus}
+                                canEdit={isOwnerView || article.addedBy?.id === currentUser.id}
+                                canDelete={isOwnerView || article.addedBy?.id === currentUser.id}
+                            />
+                        ))}
+                      </div>
+                    </div>
+                )}
+              </div>
+          )}
+
+          {activeTab === "ask-ai" && (
+              <div className="space-y-6">
+                <AskInput onAsk={handleAsk} isLoading={isLoading} />
+
+                {isLoading && <LoadingState />}
+
+                {showResults && currentQuestion && currentAnswer && (
+                    <>
+                      <AIAnswer
+                          question={currentQuestion}
+                          answer={currentAnswer}
+                          sourceCount={topReferences.length}
+                          confidence={85}
+                      />
+                      {topReferences.length > 0 ? (
+                          <ReferencesList
+                              references={topReferences}
+                              surveyId={surveyId}
+                              decisions={referenceDecisions}
+                              onReviewReference={handleReferenceDecision}
+                              onAddToNewSurvey={handleAddToNewSurvey}
+                          />
+                      ) : (
+                          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                            <h3 className="text-sm font-semibold text-gray-900 mb-2">Top References</h3>
+                            <p className="text-sm text-gray-600">
+                              No survey database references are available yet. Import articles into this survey to
+                              populate this list. The answer above is based on model knowledge only.
+                            </p>
+                          </div>
+                      )}
+                    </>
+                )}
+
+                {!isLoading && !showResults && <EmptyAskState articleCount={totalArticles} />}
+              </div>
+          )}
+        </div>
       </div>
-    </div>
   );
 }
 

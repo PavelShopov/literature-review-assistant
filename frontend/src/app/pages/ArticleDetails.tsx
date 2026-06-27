@@ -1,14 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import {
     Sparkles,
-    CheckCircle,
     ExternalLink,
     Calendar,
     BookOpen,
     User,
-    Copy,
-    HelpCircle,
     RefreshCw,
     Save,
     CheckSquare,
@@ -54,69 +51,87 @@ interface ArticleDto {
     llm_classifications?: Record<string, LlmClassification>;
 }
 
-// Fixed dimensions template for screening
-const TAXONOMY_DIMENSIONS = [
+// Master Taxonomy Mapping Directory with explicit tracking string identifiers
+const MASTER_TAXONOMY_DIMENSIONS = [
     {
+        id: "methodology",
         name: "Research Methodology",
         options: ["Empirical Study", "Theoretical Analysis", "System Design", "Literature Review", "Case Study"]
     },
     {
+        id: "dataset_context",
         name: "Target Dataset Context",
         options: ["Audio/Music", "Image Segmentation", "Text/NLP", "Synthetic Data", "Multi-modal"]
     },
     {
+        id: "framework_approach",
         name: "Model / Framework Approach",
         options: ["Deep Learning (CNN/Transformer)", "Classical ML / Statistical", "Reinforcement Learning", "Rule-Based / Heuristic", "Hybrid System"]
     },
     {
+        id: "evaluation_metrics",
         name: "Evaluation Metrics Utilized",
         options: ["Accuracy / F1-Score", "Loss / Perplexity", "Human Evaluation", "Throughput / Latency / Resource Cost", "Qualitative Analysis"]
     },
     {
+        id: "data_sourcing",
         name: "Data Sourcing Type",
         options: ["Public Benchmark Dataset", "Proprietary / Private Data", "Scraped / Web-Harvested", "Synthetically Generated", "Not Applicable"]
     },
     {
+        id: "research_focus",
         name: "Research Focus Area",
         options: ["Performance Optimization", "Security / Privacy / Robustness", "Explainability / Interpretability", "Novel Architecture Design", "Ethical / Bias Assessment"]
     },
     {
+        id: "application_domain",
         name: "Primary Application Domain",
         options: ["Healthcare / Medicine", "Finance / Economics", "Autonomous Systems / Robotics", "E-commerce / Marketing", "General Purpose Tooling"]
     },
     {
+        id: "computing_env",
         name: "Computing Environment",
         options: ["Cloud Infrastructure (AWS/GCP/Azure)", "On-Premises High-Performance Cluster", "Edge Devices / Internet of Things", "Local Workstation / Desktop", "Not Specified"]
     },
     {
+        id: "open_science",
         name: "Code Availability & Open Science",
         options: ["Public Repository (GitHub/GitLab)", "Available Upon Request", "No Code Provided", "Commercial Software / Closed Source"]
     },
     {
+        id: "learning_paradigm",
         name: "Learning Paradigm",
         options: ["Supervised Learning", "Unsupervised / Self-Supervised", "Semi-Supervised", "Few-Shot / Zero-Shot Learning", "Continual / Lifelong Learning"]
     },
     {
+        id: "model_size",
         name: "Scale of Parameters / Model Size",
         options: ["Small (<10M parameters)", "Medium (10M - 1B parameters)", "Large / LLM Scale (>1B parameters)", "Non-Parametric Model", "Not Stated"]
     },
     {
+        id: "hardware_reqs",
         name: "Hardware Requirements",
         options: ["Commodity CPU Only", "Single GPU Setup", "Multi-GPU / Distributed Cluster", "TPU / Specialized Accelerators", "Not Disclosed"]
     },
     {
+        id: "limitations",
         name: "Limitations Acknowledged",
         options: ["Computational Cost Constraints", "Data Scarcity / Quality Issues", "Generalizability Concerns", "Ethical or Safety Risks", "No Formal Limitations Discussed"]
     },
     {
+        id: "funding_source",
         name: "Funding Source Type",
         options: ["Government Grant (NSF/EU/etc.)", "Corporate / Industry Sponsored", "Academic Institutional Internal Funds", "Not Disclosed / Self-Funded"]
     },
     {
+        id: "target_audience",
         name: "Target Audience / Stakeholder",
         options: ["Academic Researchers", "Industry Practitioners / Engineers", "End-Users / Consumers", "Policy Makers / Regulators"]
     }
 ];
+
+// Fallback list of baseline IDs if user selection array is blank/missing
+const DEFAULT_CRITERIA_IDS = ["methodology", "framework_approach", "evaluation_metrics"];
 
 export default function ArticleDetails() {
     const { surveyId, articleId } = useParams<{ surveyId: string; articleId: string }>();
@@ -129,8 +144,14 @@ export default function ArticleDetails() {
     const [saving, setSaving] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
-    // User form annotations state
+    const [activeCriteriaIds, setActiveCriteriaIds] = useState<string[]>([]);
     const [annotations, setAnnotations] = useState<Record<string, UserAnnotation>>({});
+
+    // Filters down the displayed form areas
+    const filteredTaxonomyDimensions = React.useMemo(() => {
+        const targetingIds = activeCriteriaIds.length > 0 ? activeCriteriaIds : DEFAULT_CRITERIA_IDS;
+        return MASTER_TAXONOMY_DIMENSIONS.filter(dim => targetingIds.includes(dim.id));
+    }, [activeCriteriaIds]);
 
     useEffect(() => {
         async function fetchArticleDetails() {
@@ -138,16 +159,32 @@ export default function ArticleDetails() {
                 setLoading(true);
                 if (!articleId) throw new Error("Article ID is missing from the URL params.");
 
-                // 1. Fetch foundational Article Metadata
+                // 1. Fetch criteria context with core baseline fallbacks if needed
+                let criteriaIds: string[] = [];
+                if (surveyId) {
+                    const savedCriteria = localStorage.getItem(`survey:${surveyId}:criteria`);
+                    if (savedCriteria) {
+                        const parsed = JSON.parse(savedCriteria);
+                        // If it's a valid non-empty array, hook it in; otherwise use standard presets
+                        criteriaIds = Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_CRITERIA_IDS;
+                    } else {
+                        criteriaIds = DEFAULT_CRITERIA_IDS;
+                    }
+                } else {
+                    criteriaIds = DEFAULT_CRITERIA_IDS;
+                }
+                setActiveCriteriaIds(criteriaIds);
+
+                // 2. Fetch foundational Article Metadata
                 const data = (await getArticle(articleId)) as unknown as ArticleDto;
                 setArticle(data);
                 if (data.llm_classifications) {
                     setAiSuggestions(data.llm_classifications);
                 }
 
-                // 2. Build Default Empty Form Layout Matrix template
+                // 3. Populate empty validation state maps matching all schema elements
                 const initialForm: Record<string, UserAnnotation> = {};
-                TAXONOMY_DIMENSIONS.forEach(dim => {
+                MASTER_TAXONOMY_DIMENSIONS.forEach(dim => {
                     initialForm[dim.name] = {
                         dimension: dim.name,
                         values: [],
@@ -156,17 +193,15 @@ export default function ArticleDetails() {
                     };
                 });
 
-                // 3. Fetch Existing Review Progress from the database
+                // 4. Hydrate prior records if they exist
                 try {
                     const reviewResponse = await fetch(`http://localhost:8080/api/articles/${articleId}/review-data`);
                     if (reviewResponse.ok && reviewResponse.status !== 204) {
                         const savedReview = await reviewResponse.json();
 
-                        // If a valid string JSON exists inside the property context, deserialize it
                         if (savedReview && savedReview.jsonResponse) {
                             const parsedForm = JSON.parse(savedReview.jsonResponse) as Record<string, UserAnnotation>;
 
-                            // Safely hydrate the values over your default state template layout
                             Object.keys(parsedForm).forEach(key => {
                                 if (initialForm[key]) {
                                     initialForm[key] = {
@@ -183,7 +218,6 @@ export default function ArticleDetails() {
                     console.warn("No prior annotation records discovered for this session framework.", backendFetchErr);
                 }
 
-                // 4. Commit final structured map object into local hook state management array
                 setAnnotations(initialForm);
 
             } catch (err: any) {
@@ -196,7 +230,7 @@ export default function ArticleDetails() {
         if (articleId) {
             fetchArticleDetails();
         }
-    }, [articleId]);
+    }, [articleId, surveyId]);
 
     const generateTaxonomyWithGemma = async () => {
         if (!article || !articleId) return;
@@ -204,8 +238,7 @@ export default function ArticleDetails() {
             setGenerating(true);
             toast.loading("Gemini is reading the paper details...", { id: "gemini-task" });
 
-            // Dynamically construct the full validation schema definition for the prompt blueprint
-            const dynamicSchemaBlueprint = TAXONOMY_DIMENSIONS.reduce((acc, dim) => {
+            const dynamicSchemaBlueprint = filteredTaxonomyDimensions.reduce((acc, dim) => {
                 acc[dim.name] = {
                     values: dim.options,
                     confidence: "high | medium | low",
@@ -221,7 +254,7 @@ Abstract: "${article.abstract ?? ''}"
 
 For each of the dimensions provided below, select relevant option values that map to the text. Provide a confidence level ('high', 'medium', 'low') and extract a short verbatim quote as evidence proof. You MUST respond with a valid JSON object ONLY.
 
-The output format must strictly follow this structural schema layout matching all 15 dimensions:
+The output format must strictly follow this structural schema layout matching the configuration constraints:
 ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
 `.trim();
 
@@ -235,7 +268,7 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
 
             const payload = await response.json();
             setAiSuggestions(payload);
-            toast.success("Taxonomy suggestions populated for all dimensions!", { id: "gemini-task" });
+            toast.success("Taxonomy suggestions populated for selected dimensions!", { id: "gemini-task" });
         } catch (err: any) {
             console.error(err);
             toast.error(`Extraction Failed: ${err.message || err}`, { id: "gemini-task" });
@@ -244,7 +277,6 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
         }
     };
 
-    // Form Modification Handlers
     const toggleChipValue = (dimension: string, value: string) => {
         setAnnotations(prev => {
             const currentVals = prev[dimension]?.values || [];
@@ -272,7 +304,6 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
         }));
     };
 
-    // Direct AI pipeline ingestion mapping tool handler
     const handleCopyAiToForm = (dimensionName: string) => {
         const aiSuggestion = aiSuggestions[dimensionName];
         if (!aiSuggestion) {
@@ -305,10 +336,10 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                 body: JSON.stringify({ reviewForm: annotations })
             });
 
-            if (!response.ok) throw new Error("Your review has been submitted successfully");
+            if (!response.ok) throw new Error("Submission pipeline responded with an exception");
             toast.success("Review assessments saved successfully!");
         } catch (err: any) {
-            toast.error(` ${err.message}`);
+            toast.error(`Error saving review: ${err.message}`);
         } finally {
             setSaving(false);
         }
@@ -350,7 +381,7 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                     onClick={() => navigate(`/survey/${surveyId}`)}
                     className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition gap-1.5 group"
                 >
-                    <span className="transform group-hover:-translate-x-0.5 transition-transform"></span> Back to Survey Workspace
+                    Back to Survey Workspace
                 </button>
 
                 <button
@@ -425,7 +456,7 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                     {/* Review Assistant Pipeline Trigger Header */}
                     <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+                            <Sparkles className="w-4 h-4 text-indigo-400" />
                             <div>
                                 <h3 className="font-bold text-sm">Review Assistant Pipeline</h3>
                                 <p className="text-[11px] text-slate-400">Leverage AI generation values to assist your taxonomy answer</p>
@@ -440,8 +471,8 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                         </button>
                     </div>
 
-                    {/* Interactive Screening Form Loops */}
-                    {TAXONOMY_DIMENSIONS.map((dim) => {
+                    {/* Screening Form Loops */}
+                    {filteredTaxonomyDimensions.map((dim) => {
                         const currentAnn = annotations[dim.name] || { values: [], confidence: 'N/A', proof: '' };
                         const aiData = aiSuggestions[dim.name];
 
