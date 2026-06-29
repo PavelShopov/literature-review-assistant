@@ -1,5 +1,6 @@
 package mk.ukim.finki.literaturereviewassistant.web.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import mk.ukim.finki.literaturereviewassistant.model.*;
 import mk.ukim.finki.literaturereviewassistant.repository.AppUserRepository;
 import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
@@ -255,17 +256,25 @@ public class SurveyController {
     @PutMapping("/{id}/criteria")
     public ResponseEntity<?> updateSurveyCriteria(
             @PathVariable String id,
-            @RequestBody Map<String, Set<String>> payload) {
+            @RequestBody Map<String, Object> payload) {
 
         return surveyRepository.findByExternalId(id).map(survey -> {
-            Set<String> criteria = payload.get("criteria");
+            Object criteria = payload.get("criteria");
             if (criteria == null) {
                 return ResponseEntity.badRequest().body("Criteria key missing in request body.");
             }
 
-            survey.setSelectedCriteria(criteria);
-            surveyRepository.save(survey);
-            return ResponseEntity.ok().body(Map.of("message", "Criteria configurations synchronized successfully!"));
+            try {
+                ObjectMapper objectMapper = new ObjectMapper();
+                String jsonString = objectMapper.writeValueAsString(criteria);
+
+                survey.setSelectedCriteriaJson(jsonString);
+                surveyRepository.save(survey);
+
+                return ResponseEntity.ok().body(Map.of("message", "Full structured criteria saved successfully!"));
+            } catch (Exception e) {
+                return ResponseEntity.internalServerError().body("Error serializing criteria JSON block.");
+            }
         }).orElse(ResponseEntity.notFound().build());
     }
 }

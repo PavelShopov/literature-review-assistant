@@ -61,6 +61,9 @@ public class Survey {
     @Column(name = "criterion_id")
     private Set<String> selectedCriteria = new HashSet<>();
 
+    @Column(name = "selected_criteria", columnDefinition = "TEXT")
+    private String selectedCriteriaJson;
+
     // AUTOMATION: Automatically sets the date and default status when created
     @PrePersist
     protected void onCreate() {

@@ -11,9 +11,10 @@ import {
   Filter,
   UsersRound,
   Sliders,
-    Save,
+  Save,
   CheckSquare,
-  Square
+  Square, Plus,
+  X
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { AskInput } from "../components/AskInput";
@@ -146,6 +147,11 @@ const buildTopReferences = (articles: Article[], question: string): Reference[] 
   }));
 };
 
+interface CustomDimension {
+  name: string;
+  options: string[];
+}
+
 export default function SurveyDetailsPage() {
   const navigate = useNavigate();
   const { surveyId = "survey-001" } = useParams();
@@ -172,6 +178,12 @@ export default function SurveyDetailsPage() {
 
   // Custom metadata criteria setup states
   const [selectedCriteria, setSelectedCriteria] = useState<string[]>([]);
+
+  const [customDimensions, setCustomDimensions] = useState<CustomDimension[]>([]);
+  const [dimensionInput, setDimensionInput] = useState("");
+
+  const [optionInput, setOptionInput] = useState("");
+  const [currentOptionsBuild, setCurrentOptionsBuild] = useState<string[]>([]);
 
   const defaultOwner = {
     id: "owner",
@@ -225,13 +237,22 @@ export default function SurveyDetailsPage() {
       setSurvey(surveyData);
       setArticles(surveyArticles);
 
-      // Load designated criteria targets from storage
-      const savedCriteria = localStorage.getItem(`survey:${surveyId}:criteria`);
-      if (savedCriteria) {
-        setSelectedCriteria(JSON.parse(savedCriteria));
+      if (surveyData && (surveyData as any).criteria) {
+        const dbCriteria = (surveyData as any).criteria;
+        const normalized = dbCriteria.map((item: any) =>
+            typeof item === 'string' ? { name: item, options: [] } : item
+        );
+        setCustomDimensions(normalized);
       } else {
-        // Fallback or defaults
-        setSelectedCriteria(["methodology", "framework_approach", "evaluation_metrics"]);
+        const savedDimensions = localStorage.getItem(`survey:${surveyId}:dimensions`);
+        if (savedDimensions) {
+          setCustomDimensions(JSON.parse(savedDimensions));
+        } else {
+          setCustomDimensions([
+            { name: "Research Methodology", options: ["Empirical Study", "Theoretical Analysis", "System Design", "Literature Review"] },
+            { name: "Model / Framework Approach", options: ["Deep Learning (CNN/Transformer)", "Classical ML", "Reinforcement Learning"] }
+          ]);
+        }
       }
 
       const nextContributors =
@@ -299,44 +320,83 @@ export default function SurveyDetailsPage() {
     try {
       setSavingCriteria(true);
 
+      // 🟢 Send the whole array object structure containing both .name and .options arrays
+      const payload = {
+        criteria: customDimensions
+      };
+
       const response = await fetch(`http://localhost:8080/api/surveys/${surveyId}/criteria`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ criteria: selectedCriteria }) // Matches backend payload wrapper key
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "Unknown error");
-        throw new Error(`Server returned error status ${response.status}: ${errorText}`);
-      }
-
-      // Keep local storage as a local performance cache fallback matching your ArticleDetails layout
-      localStorage.setItem(`survey:${surveyId}:criteria`, JSON.stringify(selectedCriteria));
-
-      toast.success("Structured review parameters synced with database successfully!");
+      if (!response.ok) throw new Error(`Status ${response.status}`);
+      toast.success("Full criteria blueprint saved to database!");
     } catch (err: any) {
-      console.error("Database sync failure:", err);
-      toast.error(`Database Sync Failed: ${err.message}`);
+      toast.error("Database Sync Failed");
     } finally {
       setSavingCriteria(false);
     }
   };
 
-  const handleSelectAllCriteria = () => {
+  // 🟢 Add option tag to the temporary staging array before finalizing dimension
+  const handleAddOptionToStaging = () => {
+    const trimmed = optionInput.trim();
+    if (!trimmed) return;
+    if (currentOptionsBuild.some(o => o.toLowerCase() === trimmed.toLowerCase())) {
+      toast.error("Option already added.");
+      return;
+    }
+    setCurrentOptionsBuild([...currentOptionsBuild, trimmed]);
+    setOptionInput("");
+  };
+
+  const handleRemoveOptionFromStaging = (optToRemove: string) => {
+    setCurrentOptionsBuild(currentOptionsBuild.filter(o => o !== optToRemove));
+  };
+
+  const handleAddDimension = () => {
     if (!isOwnerView) return;
-    const allIds = EXTRACTION_CRITERIA_OPTIONS.map(opt => opt.id);
-    setSelectedCriteria(allIds);
-    localStorage.setItem(`survey:${surveyId}:criteria`, JSON.stringify(allIds));
-    toast.success("All evaluation dimensions enabled");
+
+    const nameTrimmed = dimensionInput.trim();
+    if (!nameTrimmed) {
+      toast.error("Dimension name cannot be empty");
+      return;
+    }
+
+    if (customDimensions.some(d => d.name.toLowerCase() === nameTrimmed.toLowerCase())) {
+      toast.error("This dimension already exists.");
+      return;
+    }
+
+    const newDimension: CustomDimension = {
+      name: nameTrimmed,
+      options: currentOptionsBuild.length > 0 ? currentOptionsBuild : []
+    };
+
+    const updated = [...customDimensions, newDimension];
+    setCustomDimensions(updated);
+    localStorage.setItem(`survey:${surveyId}:dimensions`, JSON.stringify(updated));
+
+    setDimensionInput("");
+    setCurrentOptionsBuild([]);
+    toast.success(`Dimension "${nameTrimmed}" added with ${newDimension.options.length} choices!`);
+  };
+
+  const handleRemoveDimension = (nameToRemove: string) => {
+    if (!isOwnerView) return;
+    const updated = customDimensions.filter(d => d.name !== nameToRemove);
+    setCustomDimensions(updated);
+    localStorage.setItem(`survey:${surveyId}:dimensions`, JSON.stringify(updated));
+    toast.success("Dimension removed");
   };
 
   const handleClearAllCriteria = () => {
     if (!isOwnerView) return;
-    setSelectedCriteria([]);
-    localStorage.setItem(`survey:${surveyId}:criteria`, JSON.stringify([]));
-    toast.success("All custom extraction dimensions cleared");
+    setCustomDimensions([]);
+    localStorage.setItem(`survey:${surveyId}:dimensions`, JSON.stringify([]));
+    toast.success("All custom dimensions cleared");
   };
 
   if (surveyError) {
@@ -690,89 +750,200 @@ export default function SurveyDetailsPage() {
 
                 {/* Structured Extraction Dimensions Configuration Section */}
                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4 mb-4">
+                  {/* Header Title Section */}
+                  <div
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4 mb-4">
                     <div className="flex items-center gap-2.5">
                       <div className="p-2 bg-blue-50 rounded-lg text-blue-600">
-                        <Sliders className="w-5 h-5" />
+                        <Sliders className="w-5 h-5"/>
                       </div>
                       <div>
                         <h2 className="text-lg font-semibold text-gray-900">Structured Review Criteria</h2>
-                        <p className="text-xs text-gray-500">Toggle target dimensions that reviewers must evaluate for incoming articles</p>
+                        <p className="text-xs text-gray-500">Configure core appraisal metrics and mapped categorical
+                          label configurations</p>
                       </div>
                     </div>
 
                     {isOwnerView && (
                         <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={handleSelectAllCriteria}
-                                className="px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            >
-                              Select All
-                            </button>
-                            <span className="text-gray-300 text-xs">|</span>
-                            <button
-                                type="button"
-                                onClick={handleClearAllCriteria}
-                                className="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded transition-colors"
-                            >
-                              Clear All
-                            </button>
-                          </div>
+                          <button
+                              type="button"
+                              onClick={() => {
+                                setCustomDimensions([]);
+                                localStorage.setItem(`survey:${surveyId}:dimensions`, JSON.stringify([]));
+                              }}
+                              className="px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                          >
+                            Clear All
+                          </button>
 
-                          {/* Sync Pipeline Save Trigger Button Integrated Cleanly Here */}
                           <button
                               type="button"
                               disabled={savingCriteria}
                               onClick={handleSaveCriteriaToDatabase}
-                              className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg shadow-sm transition disabled:bg-gray-300"
+                              className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg shadow-sm transition disabled:bg-gray-300 cursor-pointer"
                           >
-                            <Save className="w-3.5 h-3.5" />
+                            <Save className="w-3.5 h-3.5"/>
                             {savingCriteria ? "Syncing..." : "Save Selection"}
                           </button>
                         </div>
                     )}
                   </div>
 
-                  {/* Selection Option Grid Layout Mapping Elements */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {EXTRACTION_CRITERIA_OPTIONS.map((option) => {
-                      const isChecked = selectedCriteria.includes(option.id);
-                      return (
-                          <button
-                              key={option.id}
-                              type="button"
-                              disabled={!isOwnerView}
-                              onClick={() => handleToggleCriteria(option.id)}
-                              className={`flex items-start text-left gap-3 p-3 rounded-xl border transition-all ${
-                                  isChecked
-                                      ? "bg-blue-50/40 border-blue-200 shadow-sm"
-                                      : "bg-white border-gray-200 hover:border-gray-300"
-                              } ${!isOwnerView ? "cursor-not-allowed opacity-80" : "cursor-pointer"}`}
-                          >
-                            <div className={`mt-0.5 shrink-0 ${isChecked ? "text-blue-600" : "text-gray-400"}`}>
-                              {isChecked ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-                            </div>
-                            <div>
-                              <p className={`text-sm font-medium ${isChecked ? "text-blue-900" : "text-gray-700"}`}>
-                                {option.label}
-                              </p>
-                              <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-semibold bg-gray-100 text-gray-500">
-                {option.group}
-              </span>
-                            </div>
-                          </button>
-                      );
-                    })}
-                  </div>
+                  {/* 🟢 Step-by-Step Interactive Form Builder (Visible to Owner Only) */}
+                  {isOwnerView && (
+                      <div
+                          className="space-y-5 max-w-2xl bg-white p-5 rounded-xl border border-gray-200 shadow-sm mb-6">
+                        {/* Header Info */}
+                        <div className="border-b border-gray-100 pb-2">
+    <span className="text-xs font-bold uppercase tracking-wider text-blue-600 block">
+      Create New Dimension Template
+    </span>
+                          <p className="text-[11px] text-gray-400">
+                            Define a structural appraisal metric and its corresponding categorical labels
+                          </p>
+                        </div>
 
-                  {/* Review Mode Notice Area Text Prompt Block */}
-                  {!isOwnerView && (
-                      <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-100 text-xs text-amber-700">
-                        * You are in reviewer viewing mode. Review parameters can only be altered by the survey administrator.
+                        <div className="space-y-4">
+                          {/* Row 1: Primary Dimension Core Identity */}
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+        <span
+            className="flex items-center justify-center w-4 h-4 bg-blue-50 text-blue-600 rounded-full text-[10px] font-bold">
+          1
+        </span>
+                              Dimension Name
+                            </label>
+                            <input
+                                type="text"
+                                value={dimensionInput}
+                                onChange={(e) => setDimensionInput(e.target.value)}
+                                placeholder="e.g., Target Dataset Context or Evaluation Metrics Utilized"
+                                className="w-full px-3 py-2 text-sm bg-gray-50/50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400"
+                            />
+                          </div>
+
+                          {/* Row 2: Sub-Options Append Configuration area */}
+                          <div className="p-4 bg-gray-50 rounded-xl border border-gray-200/60 space-y-3">
+                            <label className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+        <span
+            className="flex items-center justify-center w-4 h-4 bg-gray-200 text-gray-600 rounded-full text-[10px] font-bold">
+          2
+        </span>
+                              Define Categorical Option Selection Choices
+                            </label>
+
+                            <div className="flex gap-2">
+                              <input
+                                  type="text"
+                                  value={optionInput}
+                                  onChange={(e) => setOptionInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleAddOptionToStaging();
+                                    }
+                                  }}
+                                  placeholder="e.g., Audio/Music"
+                                  className="w-full px-3 py-2 text-sm bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-gray-400"
+                              />
+                              <button
+                                  type="button"
+                                  onClick={handleAddOptionToStaging}
+                                  className="px-4 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-xs font-semibold transition-colors shrink-0"
+                              >
+                                Add Choice
+                              </button>
+                            </div>
+
+                            {/* Temporary option tags staging layout area */}
+                            {currentOptionsBuild.length > 0 ? (
+                                <div
+                                    className="flex flex-wrap gap-1.5 p-2 bg-white rounded-lg border border-gray-200/80 min-h-[38px] items-center">
+                                  {currentOptionsBuild.map(opt => (
+                                      <span
+                                          key={opt}
+                                          className="inline-flex items-center gap-1.5 bg-blue-50/60 border border-blue-100 text-blue-800 px-2.5 py-0.5 rounded-md text-xs font-medium animate-in fade-in-50 duration-150"
+                                      >
+              {opt}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveOptionFromStaging(opt)}
+                                            className="text-blue-400 hover:text-red-500 font-bold transition-colors ml-0.5 text-sm leading-none"
+                                        >
+                &times;
+              </button>
+            </span>
+                                  ))}
+                                </div>
+                            ) : (
+                                <p className="text-[11px] text-gray-400 italic pl-1">
+                                  No custom selector entries appended yet. Leaving this empty switches input fields into
+                                  free text mode.
+                                </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Form Action Submissions */}
+                        <div className="pt-2 flex justify-end">
+                          <button
+                              type="button"
+                              onClick={handleAddDimension}
+                              className="w-full sm:w-auto px-5 py-2 inline-flex items-center justify-center gap-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm transition-all transform active:scale-[0.98] cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4"/> Save Entry Template
+                          </button>
+                        </div>
                       </div>
                   )}
+
+                  {/* 🟢 Workspace Rendering Current Dimensions Grid View */}
+                  <div className="space-y-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-gray-400 block">Active Metrics Workspace</span>
+                    {customDimensions.length === 0 ? (
+                        <div
+                            className="border border-dashed border-gray-200 rounded-xl p-6 min-h-[70px] bg-gray-50/50 text-center text-xs text-gray-400 italic">
+                          No metrics assigned yet. Design custom structures above to start tracking variables.
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {customDimensions.map((dim, idx) => (
+                              <div key={`${dim.name}-${idx}`}
+                                   className="p-4 rounded-xl border border-gray-200 bg-white shadow-xs flex flex-col justify-between space-y-3">
+                                <div>
+                                  <div className="flex justify-between items-start">
+                                    <h4 className="text-sm font-bold text-gray-800">{dim.name}</h4>
+                                    {isOwnerView && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveDimension(dim.name)}
+                                            className="text-gray-400 hover:text-red-600 transition"
+                                        >
+                                          <X className="w-4 h-4"/>
+                                        </button>
+                                    )}
+                                  </div>
+
+                                  {/* Internal pill indicators displaying the assigned select options maps */}
+                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {dim.options.length === 0 ? (
+                                        <span className="text-[11px] text-gray-400 italic">Free text input fallback tag fields mode</span>
+                                    ) : (
+                                        dim.options.map(opt => (
+                                            <span key={opt}
+                                                  className="bg-blue-50 text-blue-700 border border-blue-100 text-[10px] px-2 py-0.5 rounded-md font-medium">
+                              {opt}
+                            </span>
+                                        ))
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                          ))}
+                        </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Clickable Statistics Cards */}
@@ -791,10 +962,12 @@ export default function SurveyDetailsPage() {
                         className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:shadow-md hover:border-blue-300 transition-all group cursor-pointer text-left"
                     >
                       <div className="flex items-start justify-between mb-3">
-                        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors">
-                          <FileText className="w-6 h-6 text-blue-600" />
+                        <div
+                            className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                          <FileText className="w-6 h-6 text-blue-600"/>
                         </div>
-                        <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-blue-600 group-hover:translate-x-1 transition-all" />
+                        <ArrowRight
+                            className="w-5 h-5 text-gray-400 group-hover:text-blue-600 group-hover:translate-x-1 transition-all"/>
                       </div>
                       <p className="text-3xl font-semibold text-gray-900 mb-1">
                         {totalArticles}
@@ -808,10 +981,12 @@ export default function SurveyDetailsPage() {
                         className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:shadow-md hover:border-green-300 transition-all group cursor-pointer text-left"
                     >
                       <div className="flex items-start justify-between mb-3">
-                        <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
-                          <Users className="w-6 h-6 text-green-600" />
+                        <div
+                            className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                          <Users className="w-6 h-6 text-green-600"/>
                         </div>
-                        <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-green-600 group-hover:translate-x-1 transition-all" />
+                        <ArrowRight
+                            className="w-5 h-5 text-gray-400 group-hover:text-green-600 group-hover:translate-x-1 transition-all"/>
                       </div>
                       <p className="text-3xl font-semibold text-gray-900 mb-1">
                         {screenedArticles}
@@ -825,10 +1000,12 @@ export default function SurveyDetailsPage() {
                         className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 hover:shadow-md hover:border-yellow-300 transition-all group cursor-pointer text-left"
                     >
                       <div className="flex items-start justify-between mb-3">
-                        <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center group-hover:bg-yellow-200 transition-colors">
-                          <Calendar className="w-6 h-6 text-yellow-600" />
+                        <div
+                            className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center group-hover:bg-yellow-200 transition-colors">
+                          <Calendar className="w-6 h-6 text-yellow-600"/>
                         </div>
-                        <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-yellow-600 group-hover:translate-x-1 transition-all" />
+                        <ArrowRight
+                            className="w-5 h-5 text-gray-400 group-hover:text-yellow-600 group-hover:translate-x-1 transition-all"/>
                       </div>
                       <p className="text-3xl font-semibold text-gray-900 mb-1">
                         {pendingArticles}
@@ -856,7 +1033,7 @@ export default function SurveyDetailsPage() {
                         onClick={() => setActiveTab("articles")}
                         className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
                     >
-                      <FileText className="w-5 h-5 text-blue-600 mb-2" />
+                      <FileText className="w-5 h-5 text-blue-600 mb-2"/>
                       <p className="text-sm font-medium text-gray-900">Manage Articles</p>
                       <p className="text-xs text-gray-500">Import and review papers</p>
                     </button>
@@ -864,7 +1041,7 @@ export default function SurveyDetailsPage() {
                         onClick={() => setActiveTab("ask-ai")}
                         className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
                     >
-                      <Sparkles className="w-5 h-5 text-purple-600 mb-2" />
+                      <Sparkles className="w-5 h-5 text-purple-600 mb-2"/>
                       <p className="text-sm font-medium text-gray-900">Ask AI</p>
                       <p className="text-xs text-gray-500">Get insights from your research</p>
                     </button>
@@ -872,7 +1049,7 @@ export default function SurveyDetailsPage() {
                         onClick={() => setActiveTab("reviewers")}
                         className="bg-white rounded-lg p-4 text-left hover:shadow-md transition-all group border border-gray-200"
                     >
-                      <UsersRound className="w-5 h-5 text-green-600 mb-2" />
+                      <UsersRound className="w-5 h-5 text-green-600 mb-2"/>
                       <p className="text-sm font-medium text-gray-900">Add Reviewers</p>
                       <p className="text-xs text-gray-500">Assign reviewers to this survey</p>
                     </button>
@@ -897,7 +1074,7 @@ export default function SurveyDetailsPage() {
                 {articleFilter !== "all" && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Filter className="w-4 h-4 text-blue-600" />
+                        <Filter className="w-4 h-4 text-blue-600"/>
                         <p className="text-sm font-medium text-blue-900">
                           Showing: {articleFilter === "screened" ? "Screened Articles (Included & Excluded)" : "Pending Review"}
                         </p>
@@ -924,13 +1101,13 @@ export default function SurveyDetailsPage() {
                         onClick={() => setIsImportOpen(true)}
                         className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-xl p-4 flex items-center justify-center gap-2 font-medium transition-all shadow-sm"
                     >
-                      <FileText className="w-5 h-5" />
+                      <FileText className="w-5 h-5"/>
                       Import New Articles
                     </button>
                 )}
 
                 {filteredArticles.length === 0 ? (
-                    <EmptyState onAddArticle={() => setIsImportOpen(true)} />
+                    <EmptyState onAddArticle={() => setIsImportOpen(true)}/>
                 ) : (
                     <div>
                       <div className="flex items-center justify-between mb-6">
@@ -960,9 +1137,9 @@ export default function SurveyDetailsPage() {
 
           {activeTab === "ask-ai" && (
               <div className="space-y-6">
-                <AskInput onAsk={handleAsk} isLoading={isLoading} />
+                <AskInput onAsk={handleAsk} isLoading={isLoading}/>
 
-                {isLoading && <LoadingState />}
+                {isLoading && <LoadingState/>}
 
                 {showResults && currentQuestion && currentAnswer && (
                     <>

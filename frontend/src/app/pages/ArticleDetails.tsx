@@ -9,7 +9,9 @@ import {
     RefreshCw,
     Save,
     CheckSquare,
-    Square
+    Square,
+    Plus,
+    X
 } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { getArticle } from '../api/client'; // Adjust relative path as needed
@@ -51,87 +53,15 @@ interface ArticleDto {
     llm_classifications?: Record<string, LlmClassification>;
 }
 
-// Master Taxonomy Mapping Directory with explicit tracking string identifiers
-const MASTER_TAXONOMY_DIMENSIONS = [
-    {
-        id: "methodology",
-        name: "Research Methodology",
-        options: ["Empirical Study", "Theoretical Analysis", "System Design", "Literature Review", "Case Study"]
-    },
-    {
-        id: "dataset_context",
-        name: "Target Dataset Context",
-        options: ["Audio/Music", "Image Segmentation", "Text/NLP", "Synthetic Data", "Multi-modal"]
-    },
-    {
-        id: "framework_approach",
-        name: "Model / Framework Approach",
-        options: ["Deep Learning (CNN/Transformer)", "Classical ML / Statistical", "Reinforcement Learning", "Rule-Based / Heuristic", "Hybrid System"]
-    },
-    {
-        id: "evaluation_metrics",
-        name: "Evaluation Metrics Utilized",
-        options: ["Accuracy / F1-Score", "Loss / Perplexity", "Human Evaluation", "Throughput / Latency / Resource Cost", "Qualitative Analysis"]
-    },
-    {
-        id: "data_sourcing",
-        name: "Data Sourcing Type",
-        options: ["Public Benchmark Dataset", "Proprietary / Private Data", "Scraped / Web-Harvested", "Synthetically Generated", "Not Applicable"]
-    },
-    {
-        id: "research_focus",
-        name: "Research Focus Area",
-        options: ["Performance Optimization", "Security / Privacy / Robustness", "Explainability / Interpretability", "Novel Architecture Design", "Ethical / Bias Assessment"]
-    },
-    {
-        id: "application_domain",
-        name: "Primary Application Domain",
-        options: ["Healthcare / Medicine", "Finance / Economics", "Autonomous Systems / Robotics", "E-commerce / Marketing", "General Purpose Tooling"]
-    },
-    {
-        id: "computing_env",
-        name: "Computing Environment",
-        options: ["Cloud Infrastructure (AWS/GCP/Azure)", "On-Premises High-Performance Cluster", "Edge Devices / Internet of Things", "Local Workstation / Desktop", "Not Specified"]
-    },
-    {
-        id: "open_science",
-        name: "Code Availability & Open Science",
-        options: ["Public Repository (GitHub/GitLab)", "Available Upon Request", "No Code Provided", "Commercial Software / Closed Source"]
-    },
-    {
-        id: "learning_paradigm",
-        name: "Learning Paradigm",
-        options: ["Supervised Learning", "Unsupervised / Self-Supervised", "Semi-Supervised", "Few-Shot / Zero-Shot Learning", "Continual / Lifelong Learning"]
-    },
-    {
-        id: "model_size",
-        name: "Scale of Parameters / Model Size",
-        options: ["Small (<10M parameters)", "Medium (10M - 1B parameters)", "Large / LLM Scale (>1B parameters)", "Non-Parametric Model", "Not Stated"]
-    },
-    {
-        id: "hardware_reqs",
-        name: "Hardware Requirements",
-        options: ["Commodity CPU Only", "Single GPU Setup", "Multi-GPU / Distributed Cluster", "TPU / Specialized Accelerators", "Not Disclosed"]
-    },
-    {
-        id: "limitations",
-        name: "Limitations Acknowledged",
-        options: ["Computational Cost Constraints", "Data Scarcity / Quality Issues", "Generalizability Concerns", "Ethical or Safety Risks", "No Formal Limitations Discussed"]
-    },
-    {
-        id: "funding_source",
-        name: "Funding Source Type",
-        options: ["Government Grant (NSF/EU/etc.)", "Corporate / Industry Sponsored", "Academic Institutional Internal Funds", "Not Disclosed / Self-Funded"]
-    },
-    {
-        id: "target_audience",
-        name: "Target Audience / Stakeholder",
-        options: ["Academic Researchers", "Industry Practitioners / Engineers", "End-Users / Consumers", "Policy Makers / Regulators"]
-    }
-];
+interface Criterion {
+    name: string;
+    options: string[];
+}
 
-// Fallback list of baseline IDs if user selection array is blank/missing
-const DEFAULT_CRITERIA_IDS = ["methodology", "framework_approach", "evaluation_metrics"];
+const DEFAULT_CRITERIA: Criterion[] = [
+    { name: "Research Methodology", options: ["Empirical Study", "Theoretical Analysis", "System Design", "Literature Review", "Case Study"] },
+    { name: "Model / Framework Approach", options: ["Deep Learning (CNN/Transformer)", "Classical ML / Statistical", "Reinforcement Learning", "Rule-Based / Heuristic", "Hybrid System"] },
+];
 
 export default function ArticleDetails() {
     const { surveyId, articleId } = useParams<{ surveyId: string; articleId: string }>();
@@ -144,16 +74,9 @@ export default function ArticleDetails() {
     const [saving, setSaving] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [activeCriteriaIds, setActiveCriteriaIds] = useState<string[]>([]);
+    const [dynamicCriteria, setDynamicCriteria] = useState<Criterion[]>([]);
     const [annotations, setAnnotations] = useState<Record<string, UserAnnotation>>({});
-
-    // Filters down the displayed form areas
-    const filteredTaxonomyDimensions = React.useMemo(() => {
-        const targetingIds = activeCriteriaIds.length > 0 ? activeCriteriaIds : DEFAULT_CRITERIA_IDS;
-        return MASTER_TAXONOMY_DIMENSIONS.filter(dim => targetingIds.includes(dim.id));
-    }, [activeCriteriaIds]);
-
-
+    const [customTagInputs, setCustomTagInputs] = useState<Record<string, string>>({});
 
     useEffect(() => {
         async function fetchArticleDetails() {
@@ -161,62 +84,57 @@ export default function ArticleDetails() {
                 setLoading(true);
                 if (!articleId) throw new Error("Article ID is missing from the URL params.");
 
-                // 1. Fetch criteria dimensions from Database with LocalStorage and Preset Fallbacks
-                let criteriaIds: string[] = [];
+                let fetchedCriteria: Criterion[] = [];
 
                 if (surveyId) {
                     try {
-                        // Extract numeric ID sequence in case url matches format "survey-123"
                         const parsedId = surveyId.includes('-') ? surveyId.split('-').pop() : surveyId;
-
                         const criteriaResponse = await fetch(`http://localhost:8080/api/surveys/${parsedId}/criteria`);
+
                         if (criteriaResponse.ok) {
                             const dbData = await criteriaResponse.json();
-                            // Assumes DB payload layout returns an array directly, or an object containing a criteria field
-                            const extractedIds = Array.isArray(dbData) ? dbData : dbData.criteria;
+                            const extracted = Array.isArray(dbData) ? dbData : dbData.criteria;
 
-                            if (Array.isArray(extractedIds) && extractedIds.length > 0) {
-                                criteriaIds = extractedIds;
+                            if (Array.isArray(extracted) && extracted.length > 0) {
+                                fetchedCriteria = extracted.map((c: any) =>
+                                    typeof c === 'string' ? { name: c, options: [] } : c
+                                );
                             }
                         }
                     } catch (dbFetchError) {
-                        console.warn("Could not retrieve parameters from DB ecosystem. Checking localized caches...", dbFetchError);
+                        console.warn("Could not retrieve parameters from DB infrastructure. Checking client local fallback...", dbFetchError);
                     }
 
-                    // Cache fallback loop if database is unreachable or hasn't saved properties yet
-                    if (criteriaIds.length === 0) {
-                        const savedCriteria = localStorage.getItem(`survey:${surveyId}:criteria`);
-                        if (savedCriteria) {
-                            const parsed = JSON.parse(savedCriteria);
-                            criteriaIds = Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_CRITERIA_IDS;
+                    if (fetchedCriteria.length === 0) {
+                        const saved = localStorage.getItem(`survey:${surveyId}:dimensions`);
+                        if (saved) {
+                            fetchedCriteria = JSON.parse(saved);
                         } else {
-                            criteriaIds = DEFAULT_CRITERIA_IDS;
+                            fetchedCriteria = DEFAULT_CRITERIA;
                         }
                     }
                 } else {
-                    criteriaIds = DEFAULT_CRITERIA_IDS;
+                    fetchedCriteria = DEFAULT_CRITERIA;
                 }
-                setActiveCriteriaIds(criteriaIds);
 
-                // 2. Fetch foundational Article Metadata
+                setDynamicCriteria(fetchedCriteria);
+
                 const data = (await getArticle(articleId)) as unknown as ArticleDto;
                 setArticle(data);
                 if (data.llm_classifications) {
                     setAiSuggestions(data.llm_classifications);
                 }
 
-                // 3. Populate empty validation state maps matching all schema elements
                 const initialForm: Record<string, UserAnnotation> = {};
-                MASTER_TAXONOMY_DIMENSIONS.forEach(dim => {
-                    initialForm[dim.name] = {
-                        dimension: dim.name,
+                fetchedCriteria.forEach(criterion => {
+                    initialForm[criterion.name] = {
+                        dimension: criterion.name,
                         values: [],
                         confidence: 'N/A',
                         proof: ''
                     };
                 });
 
-                // 4. Hydrate prior review records if they exist
                 try {
                     const reviewResponse = await fetch(`http://localhost:8080/api/articles/${articleId}/review-data`);
                     if (reviewResponse.ok && reviewResponse.status !== 204) {
@@ -259,13 +177,13 @@ export default function ArticleDetails() {
         if (!article || !articleId) return;
         try {
             setGenerating(true);
-            toast.loading("Gemini is reading the paper details...", { id: "gemini-task" });
+            toast.loading("Gemini is reading...", { id: "gemini-task" });
 
-            const dynamicSchemaBlueprint = filteredTaxonomyDimensions.reduce((acc, dim) => {
-                acc[dim.name] = {
-                    values: dim.options,
+            const dynamicSchemaBlueprint = dynamicCriteria.reduce((acc, criterion) => {
+                acc[criterion.name] = {
+                    values: criterion.options.length > 0 ? criterion.options : ["Detected Custom Values"],
                     confidence: "high | medium | low",
-                    proof: "Verbatim quote string supporting your classification"
+                    proof: "Verbatim quote string"
                 };
                 return acc;
             }, {} as Record<string, any>);
@@ -311,6 +229,22 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                 [dimension]: { ...prev[dimension], values: nextVals }
             };
         });
+    };
+
+    const handleAddCustomTagValue = (dimension: string) => {
+        const inputVal = customTagInputs[dimension]?.trim();
+        if (!inputVal) return;
+
+        setAnnotations(prev => {
+            const currentVals = prev[dimension]?.values || [];
+            if (currentVals.includes(inputVal)) return prev;
+            return {
+                ...prev,
+                [dimension]: { ...prev[dimension], values: [...currentVals, inputVal] }
+            };
+        });
+
+        setCustomTagInputs(prev => ({ ...prev, [dimension]: "" }));
     };
 
     const handleSetConfidence = (dimension: string, conf: 'high' | 'medium' | 'low' | 'N/A') => {
@@ -396,16 +330,16 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
 
     const displayYear = article.publicationYear ?? article.year ?? "N/A";
     const displayAbstract = article.abstract ?? "No abstract available for this paper.";
+    const targetArticleUrl = article.url?.startsWith('http') ? article.url : `https://doi.org/${article.doi}`;
 
     return (
         <div className="max-w-7xl mx-auto my-6 px-4 md:px-8 space-y-6">
             <Toaster position="top-right" />
 
-            {/* Navigation Row */}
             <div className="flex justify-between items-center">
                 <button
                     onClick={() => navigate(`/survey/${surveyId}`)}
-                    className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition gap-1.5 group"
+                    className="inline-flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 transition gap-1.5 group cursor-pointer"
                 >
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -423,14 +357,13 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                 <button
                     onClick={handleSaveReviewForm}
                     disabled={saving}
-                    className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm px-5 py-2 rounded-xl shadow-sm transition disabled:bg-gray-300"
+                    className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-semibold text-sm px-5 py-2 rounded-xl shadow-sm transition disabled:bg-gray-300 cursor-pointer"
                 >
                     <Save className="w-4 h-4" /> {saving ? "Saving Changes..." : "Submit Review Form"}
                 </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-
                 {/* Paper Information Metadata Layout */}
                 <div className="lg:col-span-5 space-y-6 bg-white p-6 shadow-sm rounded-xl border border-gray-200">
                     <div className="border-b border-gray-100 pb-4">
@@ -447,16 +380,19 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                             <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {displayYear}</span>
                         </p>
 
-                        {article.doi && (
-                            <a
-                                href={`https://doi.org/${article.doi}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mt-4 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-                            >
-                                <ExternalLink className="w-4 h-4" />
-                                View Article
-                            </a>
+                        {(article.url || article.doi) && (
+                            <div className="mt-4 flex flex-col sm:flex-row gap-3">
+                                <a
+                                    href={targetArticleUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow-sm transition"
+                                >
+                                    <ExternalLink className="w-3.5 h-4" />
+                                    View Article
+                                </a>
+
+                            </div>
                         )}
                     </div>
 
@@ -486,10 +422,7 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                     )}
                 </div>
 
-                {/* Screening Assessment Questionnaire Form Workspaces */}
                 <div className="lg:col-span-7 space-y-6">
-
-                    {/* Review Assistant Pipeline Trigger Header */}
                     <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <Sparkles className="w-4 h-4 text-indigo-400" />
@@ -501,59 +434,105 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                         <button
                             onClick={generateTaxonomyWithGemma}
                             disabled={generating}
-                            className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition inline-flex items-center gap-1.5"
+                            className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition inline-flex items-center gap-1.5 cursor-pointer"
                         >
                             <RefreshCw className={`w-3.5 h-3.5 ${generating ? 'animate-spin' : ''}`} /> Run Gemini Extraction
                         </button>
                     </div>
 
-                    {/* Screening Form Loops */}
-                    {filteredTaxonomyDimensions.map((dim) => {
-                        const currentAnn = annotations[dim.name] || { values: [], confidence: 'N/A', proof: '' };
-                        const aiData = aiSuggestions[dim.name];
+                    {dynamicCriteria.map((criterion) => {
+                        const criterionName = criterion.name;
+                        const currentAnn = annotations[criterionName] || { values: [], confidence: 'N/A', proof: '' };
+                        const aiData = aiSuggestions[criterionName];
 
                         return (
-                            <div key={dim.name} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
+                            <div key={criterionName} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
                                 <div className="border-b border-gray-100 pb-2">
-                                    <h3 className="text-sm font-bold text-gray-800 tracking-wide uppercase">{dim.name}</h3>
+                                    <h3 className="text-sm font-bold text-gray-800 tracking-wide uppercase">{criterionName}</h3>
                                 </div>
 
-                                {/* Question Value Choice Selection Grid */}
                                 <div>
-                                    <label className="text-xs font-semibold text-gray-400 block mb-2">Select Values mapped in this text:</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {dim.options.map(opt => {
-                                            const isSelected = currentAnn.values.includes(opt);
-                                            return (
+                                    {criterion.options && criterion.options.length > 0 ? (
+                                        <>
+                                            <label className="text-xs font-semibold text-gray-400 block mb-2">Select Options mapped in this text:</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {criterion.options.map(opt => {
+                                                    const isSelected = currentAnn.values.includes(opt);
+                                                    return (
+                                                        <button
+                                                            key={opt}
+                                                            type="button"
+                                                            onClick={() => toggleChipValue(criterionName, opt)}
+                                                            className={`px-3 py-1 text-xs font-medium rounded-full border transition flex items-center gap-1.5 cursor-pointer ${
+                                                                isSelected
+                                                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                                                                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                                            }`}
+                                                        >
+                                                            {isSelected ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                                                            {opt}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <label className="text-xs font-semibold text-gray-400 block mb-2">Assigned Empirical Value Tags:</label>
+                                            <div className="flex flex-wrap gap-1.5 mb-3">
+                                                {currentAnn.values.length === 0 ? (
+                                                    <span className="text-xs text-gray-400 italic">No value tags recorded yet for this custom dimension.</span>
+                                                ) : (
+                                                    currentAnn.values.map(val => (
+                                                        <span key={val} className="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium px-2.5 py-0.5 rounded-md text-xs">
+                                                            {val}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggleChipValue(criterionName, val)}
+                                                                className="text-indigo-400 hover:text-indigo-900 ml-1 font-bold focus:outline-none"
+                                                            >
+                                                                &times;
+                                                            </button>
+                                                        </span>
+                                                    ))
+                                                )}
+                                            </div>
+                                            <div className="flex gap-2 max-w-sm">
+                                                <input
+                                                    type="text"
+                                                    value={customTagInputs[criterionName] || ""}
+                                                    onChange={(e) => setCustomTagInputs(prev => ({ ...prev, [criterionName]: e.target.value }))}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            handleAddCustomTagValue(criterionName);
+                                                        }
+                                                    }}
+                                                    placeholder="Type synthesis value label..."
+                                                    className="w-full text-xs px-2.5 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                />
                                                 <button
-                                                    key={opt}
-                                                    onClick={() => toggleChipValue(dim.name, opt)}
-                                                    className={`px-3 py-1 text-xs font-medium rounded-full border transition flex items-center gap-1.5 ${
-                                                        isSelected
-                                                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                                                            : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-                                                    }`}
+                                                    type="button"
+                                                    onClick={() => handleAddCustomTagValue(criterionName)}
+                                                    className="bg-gray-100 border border-gray-300 hover:bg-gray-200 p-1.5 rounded-lg text-gray-700 text-xs shrink-0 cursor-pointer"
                                                 >
-                                                    {isSelected ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
-                                                    {opt}
+                                                    <Plus className="w-3.5 h-3.5" />
                                                 </button>
-                                            );
-                                        })}
-                                    </div>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
 
-                                {/* Form Row 2: Confidence level selectors and verbatim notes */}
                                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 pt-2">
-
-                                    {/* Confidence Buttons */}
                                     <div className="md:col-span-5 space-y-2">
                                         <label className="text-xs font-semibold text-gray-400 block">Reviewer Confidence</label>
                                         <div className="grid grid-cols-2 gap-1.5 text-xs font-medium">
                                             {(['high', 'medium', 'low'] as const).map(c => (
                                                 <button
                                                     key={c}
-                                                    onClick={() => handleSetConfidence(dim.name, c)}
-                                                    className={`py-1.5 px-2 rounded-lg border text-center capitalize transition ${
+                                                    type="button"
+                                                    onClick={() => handleSetConfidence(criterionName, c)}
+                                                    className={`py-1.5 px-2 rounded-lg border text-center capitalize transition cursor-pointer ${
                                                         currentAnn.confidence === c
                                                             ? c === 'high' ? 'bg-green-50 border-green-500 text-green-700 font-bold' :
                                                                 c === 'medium' ? 'bg-amber-50 border-amber-500 text-amber-700 font-bold' :
@@ -565,8 +544,9 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                                                 </button>
                                             ))}
                                             <button
-                                                onClick={() => handleSetConfidence(dim.name, 'N/A')}
-                                                className={`py-1.5 px-2 rounded-lg border text-center transition ${
+                                                type="button"
+                                                onClick={() => handleSetConfidence(criterionName, 'N/A')}
+                                                className={`py-1.5 px-2 rounded-lg border text-center transition cursor-pointer ${
                                                     currentAnn.confidence === 'N/A'
                                                         ? 'bg-gray-100 border-gray-400 text-gray-700 font-bold'
                                                         : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
@@ -577,68 +557,42 @@ ${JSON.stringify(dynamicSchemaBlueprint, null, 2)}
                                         </div>
                                     </div>
 
-                                    {/* Verbatim Proof Area */}
                                     <div className="md:col-span-7 space-y-1">
                                         <label className="text-xs font-semibold text-gray-400 block">Proof / Verbatim Quote Evidence</label>
                                         <textarea
                                             value={currentAnn.proof}
-                                            onChange={(e) => handleSetProof(dim.name, e.target.value)}
+                                            onChange={(e) => handleSetProof(criterionName, e.target.value)}
                                             placeholder="Paste text snippets or extraction sentences confirming your taxonomy selection..."
                                             className="w-full text-xs p-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 min-h-[76px] placeholder-gray-300 shadow-inner"
                                         />
                                     </div>
                                 </div>
 
-                                {/* AI Suggestions Integration Component */}
                                 {aiData && (
                                     <div className="mt-4 bg-indigo-50/50 rounded-xl border border-indigo-100/70 p-3 space-y-2 text-xs">
                                         <div className="flex justify-between items-center">
                                             <span className="flex items-center gap-1 font-bold text-indigo-900">
-                                                <Sparkles className="w-3.5 h-3.5 text-indigo-500" /> AI Suggestions extraction
+                                                <Sparkles className="w-3.5 h-3.5 text-indigo-500" /> Gemma Suggestion
                                             </span>
                                             <button
-                                                onClick={() => handleCopyAiToForm(dim.name)}
-                                                className="text-[11px] font-semibold text-indigo-700 hover:text-indigo-900 bg-white px-2 py-0.5 rounded border border-indigo-200 shadow-xs transition"
+                                                type="button"
+                                                onClick={() => handleCopyAiToForm(criterionName)}
+                                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[11px] px-2.5 py-1 rounded-md transition cursor-pointer"
                                             >
-                                                Copy to my answer
+                                                Apply Suggestion
                                             </button>
                                         </div>
-
-                                        <div className="flex flex-wrap items-center gap-1.5">
-                                            <span className="text-gray-400 font-medium">Extracted values:</span>
-                                            {aiData.values && aiData.values.length > 0 ? (
-                                                aiData.values.map((v, i) => (
-                                                    <span key={i} className="bg-white text-indigo-800 px-2 py-0.5 rounded font-mono border text-[10px]">
-                                                        {v}
-                                                    </span>
-                                                ))
-                                            ) : (
-                                                <span className="text-gray-400 italic text-[11px]">No categorical labels found</span>
-                                            )}
-
-                                            {aiData.confidence && (
-                                                <span className={`ml-auto px-1.5 py-0.2 rounded font-bold uppercase text-[9px] ${
-                                                    aiData.confidence.toLowerCase() === 'high' ? 'bg-green-100 text-green-700' :
-                                                        aiData.confidence.toLowerCase() === 'medium' ? 'bg-amber-100 text-amber-700' :
-                                                            'bg-red-100 text-red-700'
-                                                }`}>
-                                                    {aiData.confidence}
-                                                </span>
-                                            )}
+                                        <div className="space-y-1 text-indigo-950">
+                                            <p><span className="font-semibold">Values:</span> {aiData.values?.join(', ') || 'None configuration'}</p>
+                                            <p className="capitalize"><span className="font-semibold">Confidence:</span> {aiData.confidence || 'unknown'}</p>
+                                            {aiData.proof && <p className="italic bg-white/60 p-1.5 rounded border border-indigo-100/40 mt-1">"{aiData.proof}"</p>}
                                         </div>
-
-                                        {aiData.proof && (
-                                            <div className="bg-white/80 p-2 rounded border border-indigo-50 text-gray-600 italic leading-normal">
-                                                "{aiData.proof}"
-                                            </div>
-                                        )}
                                     </div>
                                 )}
                             </div>
                         );
                     })}
                 </div>
-
             </div>
         </div>
     );
