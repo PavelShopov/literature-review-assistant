@@ -69,4 +69,4 @@ The backend server will hook directly into your active Docker database container
 
 ## Live Demo
 You can interact with a live environment of the platform directly here:
-[https://www.youtube.com/watch?v=dlUtoUIQE9Q](https://youtu.be/9Ul16pxSh20?si=Wv0irE3ztOw_3DeJ)
+[https://www.youtube.com/watch?v=tekRV-I-Jj8](https://www.youtube.com/watch?v=tekRV-I-Jj8)
