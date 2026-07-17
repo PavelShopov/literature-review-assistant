@@ -14,7 +14,8 @@ import {
   Save,
   CheckSquare,
   Square, Plus,
-  X
+  X,
+  Upload
 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { AskInput } from "../components/AskInput";
@@ -41,6 +42,10 @@ import {
   updateSurveyArticle,
   type SurveyDetails,
   createSurveyWithArticle,
+  importClassifiedArticles,
+  importTaxonomy,
+  type ClassifiedArticleImportSummary,
+  type TaxonomyImportSummary,
 } from "../api/client";
 
 type TabType = "dashboard" | "articles" | "ask-ai" | "reviewers";
@@ -184,6 +189,15 @@ export default function SurveyDetailsPage() {
 
   const [optionInput, setOptionInput] = useState("");
   const [currentOptionsBuild, setCurrentOptionsBuild] = useState<string[]>([]);
+  const [taxonomyFile, setTaxonomyFile] = useState<File | null>(null);
+  const [isImportingTaxonomy, setIsImportingTaxonomy] = useState(false);
+  const [taxonomyImportError, setTaxonomyImportError] = useState<string | null>(null);
+  const [taxonomyImportSummary, setTaxonomyImportSummary] = useState<TaxonomyImportSummary | null>(null);
+  const [classifiedArticlesFile, setClassifiedArticlesFile] = useState<File | null>(null);
+  const [isImportingClassifiedArticles, setIsImportingClassifiedArticles] = useState(false);
+  const [classifiedArticlesImportError, setClassifiedArticlesImportError] = useState<string | null>(null);
+  const [classifiedArticlesImportSummary, setClassifiedArticlesImportSummary] =
+      useState<ClassifiedArticleImportSummary | null>(null);
 
   const defaultOwner = {
     id: "owner",
@@ -557,6 +571,54 @@ export default function SurveyDetailsPage() {
     setActiveTab("articles");
   };
 
+  const handleTaxonomyImport = async () => {
+    if (!taxonomyFile || isImportingTaxonomy) return;
+
+    try {
+      setIsImportingTaxonomy(true);
+      setTaxonomyImportError(null);
+      setTaxonomyImportSummary(null);
+
+      const summary = await importTaxonomy(taxonomyFile);
+      const importedDimensions = summary.dimensions.map((dimension) => ({
+        name: dimension.name,
+        options: dimension.options ?? [],
+      }));
+
+      setCustomDimensions(importedDimensions);
+      localStorage.setItem(`survey:${surveyId}:dimensions`, JSON.stringify(importedDimensions));
+      setTaxonomyImportSummary(summary);
+      toast.success("Taxonomy imported successfully");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Taxonomy import failed";
+      setTaxonomyImportError(message);
+      toast.error(message);
+    } finally {
+      setIsImportingTaxonomy(false);
+    }
+  };
+
+  const handleClassifiedArticlesImport = async () => {
+    if (!classifiedArticlesFile || isImportingClassifiedArticles) return;
+
+    try {
+      setIsImportingClassifiedArticles(true);
+      setClassifiedArticlesImportError(null);
+      setClassifiedArticlesImportSummary(null);
+
+      const summary = await importClassifiedArticles(surveyId, classifiedArticlesFile);
+      setClassifiedArticlesImportSummary(summary);
+      void loadSurveyData();
+      toast.success("Classified articles imported successfully");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Classified article import failed";
+      setClassifiedArticlesImportError(message);
+      toast.error(message);
+    } finally {
+      setIsImportingClassifiedArticles(false);
+    }
+  };
+
   const handleImport = (type: "url" | "bibtex" | "pdf", data: string | File) => {
     const addedBy = {
       id: currentUser.id,
@@ -791,6 +853,150 @@ export default function SurveyDetailsPage() {
                   </div>
 
                   {/* 🟢 Step-by-Step Interactive Form Builder (Visible to Owner Only) */}
+                  {isOwnerView && (
+                      <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Upload className="h-4 w-4 text-blue-600" />
+                              <h3 className="text-sm font-semibold text-gray-900">Import taxonomy JSON</h3>
+                            </div>
+                            <p className="text-xs text-gray-600">
+                              Upload the unified taxonomy JSON to create or update reusable dimensions and values.
+                              Imported dimensions replace the active workspace below.
+                            </p>
+                            <input
+                                type="file"
+                                accept="application/json,.json"
+                                onChange={(event) => {
+                                  setTaxonomyFile(event.target.files?.[0] ?? null);
+                                  setTaxonomyImportError(null);
+                                  setTaxonomyImportSummary(null);
+                                }}
+                                className="block w-full text-xs text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
+                            />
+                          </div>
+
+                          <button
+                              type="button"
+                              onClick={handleTaxonomyImport}
+                              disabled={!taxonomyFile || isImportingTaxonomy}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                          >
+                            <Upload className="h-3.5 w-3.5" />
+                            {isImportingTaxonomy ? "Importing..." : "Import Taxonomy"}
+                          </button>
+                        </div>
+
+                        {taxonomyImportError && (
+                            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                              {taxonomyImportError}
+                            </div>
+                        )}
+
+                        {taxonomyImportSummary && (
+                            <div className="mt-3 rounded-lg border border-green-200 bg-white px-3 py-3 text-xs text-gray-700">
+                              <p className="font-semibold text-green-700">Import completed.</p>
+                              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                <span>Dimensions created: {taxonomyImportSummary.dimensionsCreated}</span>
+                                <span>Dimensions updated: {taxonomyImportSummary.dimensionsUpdated}</span>
+                                <span>Dimensions skipped: {taxonomyImportSummary.dimensionsSkipped}</span>
+                                <span>Values created: {taxonomyImportSummary.valuesCreated}</span>
+                                <span>Values updated: {taxonomyImportSummary.valuesUpdated}</span>
+                                <span>Values skipped: {taxonomyImportSummary.valuesSkipped}</span>
+                              </div>
+                              {taxonomyImportSummary.warnings.length > 0 && (
+                                  <div className="mt-2">
+                                    <p className="font-semibold text-amber-700">Warnings</p>
+                                    <ul className="mt-1 list-disc pl-5">
+                                      {taxonomyImportSummary.warnings.map((warning, index) => (
+                                          <li key={`${warning}-${index}`}>{warning}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                              )}
+                            </div>
+                        )}
+
+                        <div className="mt-4 border-t border-blue-100 pt-4">
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Upload className="h-4 w-4 text-purple-600" />
+                                <h3 className="text-sm font-semibold text-gray-900">Import classified articles JSON</h3>
+                              </div>
+                              <p className="text-xs text-gray-600">
+                                Upload classified articles after the taxonomy exists. Unknown taxonomy dimensions or
+                                values are skipped and reported as warnings.
+                              </p>
+                              <input
+                                  type="file"
+                                  accept="application/json,.json"
+                                  onChange={(event) => {
+                                    setClassifiedArticlesFile(event.target.files?.[0] ?? null);
+                                    setClassifiedArticlesImportError(null);
+                                    setClassifiedArticlesImportSummary(null);
+                                  }}
+                                  className="block w-full text-xs text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-semibold file:text-purple-700 hover:file:bg-purple-100"
+                              />
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={handleClassifiedArticlesImport}
+                                disabled={!classifiedArticlesFile || isImportingClassifiedArticles}
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                            >
+                              <Upload className="h-3.5 w-3.5" />
+                              {isImportingClassifiedArticles ? "Importing..." : "Import Articles"}
+                            </button>
+                          </div>
+
+                          {classifiedArticlesImportError && (
+                              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                                {classifiedArticlesImportError}
+                              </div>
+                          )}
+
+                          {classifiedArticlesImportSummary && (
+                              <div className="mt-3 rounded-lg border border-green-200 bg-white px-3 py-3 text-xs text-gray-700">
+                                <p className="font-semibold text-green-700">Classified articles import completed.</p>
+                                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                  <span>Articles created: {classifiedArticlesImportSummary.articlesCreated}</span>
+                                  <span>Articles updated: {classifiedArticlesImportSummary.articlesUpdated}</span>
+                                  <span>Articles skipped: {classifiedArticlesImportSummary.articlesSkipped}</span>
+                                  <span>Survey links created: {classifiedArticlesImportSummary.surveyLinksCreated}</span>
+                                  <span>Survey links skipped: {classifiedArticlesImportSummary.surveyLinksSkipped}</span>
+                                  <span>Classifications created: {classifiedArticlesImportSummary.classificationsCreated}</span>
+                                  <span>Classifications updated: {classifiedArticlesImportSummary.classificationsUpdated}</span>
+                                  <span>Classifications skipped: {classifiedArticlesImportSummary.classificationsSkipped}</span>
+                                </div>
+                                {classifiedArticlesImportSummary.warnings.length > 0 && (
+                                    <div className="mt-2">
+                                      <p className="font-semibold text-amber-700">Warnings</p>
+                                      <ul className="mt-1 max-h-32 list-disc overflow-auto pl-5">
+                                        {classifiedArticlesImportSummary.warnings.map((warning, index) => (
+                                            <li key={`${warning}-${index}`}>{warning}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                )}
+                                {classifiedArticlesImportSummary.errors.length > 0 && (
+                                    <div className="mt-2">
+                                      <p className="font-semibold text-red-700">Errors</p>
+                                      <ul className="mt-1 max-h-32 list-disc overflow-auto pl-5">
+                                        {classifiedArticlesImportSummary.errors.map((error, index) => (
+                                            <li key={`${error}-${index}`}>{error}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                )}
+                              </div>
+                          )}
+                        </div>
+                      </div>
+                  )}
+
                   {isOwnerView && (
                       <div
                           className="space-y-5 max-w-2xl bg-white p-5 rounded-xl border border-gray-200 shadow-sm mb-6">
