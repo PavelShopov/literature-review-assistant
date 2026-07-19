@@ -1,6 +1,7 @@
 package mk.ukim.finki.literaturereviewassistant.web.controller;
 
 import mk.ukim.finki.literaturereviewassistant.repository.AppUserRepository;
+import mk.ukim.finki.literaturereviewassistant.repository.SurveyRepository;
 import mk.ukim.finki.literaturereviewassistant.service.SurveyService;
 import mk.ukim.finki.literaturereviewassistant.web.dto.PdfDownload;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,7 @@ class SurveyControllerPdfTest {
         when(service.findArticlePdf("article-1", "Bearer token"))
                 .thenReturn(new PdfDownload("%PDF-test".getBytes(), MediaType.APPLICATION_PDF_VALUE, "paper.pdf"));
 
-        SurveyController controller = new SurveyController(service, mock(AppUserRepository.class));
+        SurveyController controller = new SurveyController(service, mock(AppUserRepository.class), mock(SurveyRepository.class));
         ResponseEntity<byte[]> response = controller.getArticlePdf("article-1", "Bearer token");
 
         assertEquals(MediaType.APPLICATION_PDF, response.getHeaders().getContentType());

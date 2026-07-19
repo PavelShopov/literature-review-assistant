@@ -205,7 +205,8 @@ public class SurveyController {
                     ownerDto = new UserResponse(
                             r.getReviewerId(),
                             r.getName(),
-                            r.getEmail()
+                            r.getEmail(),
+                            "Owner"
                     );
                     break;
                 }
@@ -214,7 +215,7 @@ public class SurveyController {
 
         // Fallback ако случајно нема дефинирано Owner во базата за оваа анкета
         if (ownerDto == null) {
-            ownerDto = new UserResponse(-1L, "Survey Owner", "owner@finki.ukim.mk");
+            ownerDto = new UserResponse(-1L, "Survey Owner", "owner@finki.ukim.mk", "Owner");
         }
 
         // 3. Сега ги праќаме точно 10-те аргументи во редоследот кој го бара твојот рекорд

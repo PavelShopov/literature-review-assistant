@@ -21,6 +21,7 @@ export type AuthUser = {
   id: string | number;
   name: string;
   email: string;
+  role?: string;
 };
 
 export type AuthResponse = {
@@ -448,6 +449,59 @@ export function deleteSurveyArticle(surveyId: string, articleId: string): Promis
 
   return request<void>(`/api/surveys/${surveyId}/articles/${articleId}`, {
     method: "DELETE",
+  });
+}
+
+export type TaxonomyDimension = {
+  name: string;
+  description?: string | null;
+  options: string[];
+};
+
+export type TaxonomyImportSummary = {
+  dimensionsCreated: number;
+  dimensionsUpdated: number;
+  dimensionsSkipped: number;
+  valuesCreated: number;
+  valuesUpdated: number;
+  valuesSkipped: number;
+  warnings: string[];
+  dimensions: TaxonomyDimension[];
+};
+
+export function importTaxonomy(file: File): Promise<TaxonomyImportSummary> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return request<TaxonomyImportSummary>("/api/taxonomies/import", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export type ClassifiedArticleImportSummary = {
+  articlesCreated: number;
+  articlesUpdated: number;
+  articlesSkipped: number;
+  surveyLinksCreated: number;
+  surveyLinksSkipped: number;
+  classificationsCreated: number;
+  classificationsUpdated: number;
+  classificationsSkipped: number;
+  warnings: string[];
+  errors: string[];
+};
+
+export function importClassifiedArticles(
+  surveyId: string,
+  file: File,
+): Promise<ClassifiedArticleImportSummary> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  return request<ClassifiedArticleImportSummary>(`/api/surveys/${surveyId}/classified-articles/import`, {
+    method: "POST",
+    body: formData,
   });
 }
 

@@ -92,7 +92,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private UserResponse toUserResponse(AppUser user) {
-        return new UserResponse(user.getId(), user.getName(), user.getEmail());
+        return new UserResponse(user.getId(), user.getName(), user.getEmail(), user.getRole());
     }
 
     private String extractToken(String authorization) {

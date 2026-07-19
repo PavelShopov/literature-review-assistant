@@ -142,6 +142,11 @@ public interface ArticleService {
 //         * @return map of articleId → {answer, explanation}
 //         */
 //        Map<Long, Map<String, Object>> batchAsk(Long surveyId, Long promptId, boolean useFullText);
+
+        /**
+         * Uses article.py to fetch abstracts for articles that don't have one.
+         */
+        int syncAbstracts();
 }
 
 
