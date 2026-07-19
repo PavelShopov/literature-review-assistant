@@ -401,4 +401,51 @@ public class ArticleServiceImpl implements ArticleService{
 //        doc.setExtractedText(pdfExtractorService.extractText(content));
         documentRepository.save(doc);
     }
+
+    @Override
+    public int syncAbstracts() {
+        List<Article> articles = articleRepository.findAll();
+        int count = 0;
+        for (Article article : articles) {
+            if (article.getArticleAbstract() == null || article.getArticleAbstract().trim().isEmpty()) {
+                String abstractText = fetchAbstractWithArticlePy(article);
+                if (abstractText != null && !abstractText.trim().isEmpty()) {
+                    article.setArticleAbstract(abstractText);
+                    articleRepository.save(article);
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private String fetchAbstractWithArticlePy(Article article) {
+        try {
+            List<String> command = new ArrayList<>();
+            command.add("python3");
+            command.add("article.py");
+            if (article.getDoi() != null && !article.getDoi().isEmpty()) {
+                command.add("--doi");
+                command.add(article.getDoi());
+            } else if (article.getTitle() != null && !article.getTitle().isEmpty()) {
+                command.add("--title");
+                command.add(article.getTitle());
+            } else {
+                return null;
+            }
+
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            
+            try (java.util.Scanner s = new java.util.Scanner(process.getInputStream()).useDelimiter("\\A")) {
+                String result = s.hasNext() ? s.next() : "";
+                process.waitFor();
+                return result.trim();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
 }

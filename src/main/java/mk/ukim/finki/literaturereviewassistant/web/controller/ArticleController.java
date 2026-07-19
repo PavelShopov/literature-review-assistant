@@ -57,6 +57,12 @@ public class ArticleController {
     }
 
     // ─── Import / Ingestion ───────────────────────────────────────────────────
+    @PostMapping("/sync-abstracts")
+    public ResponseEntity<Map<String, String>> syncAbstracts() {
+        int updatedCount = articleService.syncAbstracts();
+        return ResponseEntity.ok(Map.of("message", "Successfully updated " + updatedCount + " abstracts."));
+    }
+
     @PostMapping("/import/bib")
     public List<Article> importFromBib(@RequestParam("file") MultipartFile bibFile) {
         return articleService.importFromBib(bibFile);
