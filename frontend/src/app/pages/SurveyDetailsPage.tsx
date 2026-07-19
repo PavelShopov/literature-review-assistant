@@ -217,9 +217,9 @@ export default function SurveyDetailsPage() {
   const currentUser = authUser ?? (isReviewerFallback(roleParam) ? defaultReviewer : defaultOwner);
 
   const currentRole: "Owner" | "Reviewer" = authUser
-      ? contributors.some(
+      ? (authUser.role === "ADMIN" || contributors.some(
           (c) => c.email?.toLowerCase() === authUser.email?.toLowerCase() && c.role === "Owner",
-      ) || (survey?.owner?.email?.toLowerCase() === authUser.email?.toLowerCase())
+      ) || (survey?.owner?.email?.toLowerCase() === authUser.email?.toLowerCase()))
           ? "Owner"
           : "Reviewer"
       : isReviewerFallback(roleParam)

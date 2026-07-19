@@ -1449,8 +1449,8 @@ public class SurveyServiceImpl implements SurveyService {
                 .findFirst()
                 .orElse(null);
         UserResponse owner = ownerReviewer == null
-                ? new UserResponse(-1L, "Survey Owner", "owner@example.com")
-                : new UserResponse(ownerReviewer.getReviewerId(), ownerReviewer.getName(), ownerReviewer.getEmail());
+                ? new UserResponse(-1L, "Survey Owner", "owner@example.com", "Owner")
+                : new UserResponse(ownerReviewer.getReviewerId(), ownerReviewer.getName(), ownerReviewer.getEmail(), "Owner");
 
         return new SurveyDetailsDto(
                 survey.getExternalId(),
@@ -1754,6 +1754,10 @@ public class SurveyServiceImpl implements SurveyService {
     }
 
     private boolean isCurrentUserSurveyOwner(Survey survey, AppUser currentUser) {
+        if (currentUser != null && "ADMIN".equalsIgnoreCase(currentUser.getRole())) {
+            return true;
+        }
+
         Reviewer owner = reviewerRepository.findBySurveysContaining(survey).stream()
                 .filter(reviewer -> "Owner".equals(reviewer.getRole()))
                 .findFirst()

@@ -21,6 +21,7 @@ export type AuthUser = {
   id: string | number;
   name: string;
   email: string;
+  role?: string;
 };
 
 export type AuthResponse = {
